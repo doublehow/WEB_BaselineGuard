@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block title %}{{ h.name }} — BaselineGuard{% endblock %}
+{% block page_title %}<a href="/hosts" class="muted"
+   style="font-size:13px;font-weight:400;vertical-align:middle;margin-right:10px;">← 主機清單</a>{{ h.name }}<span class="muted" style="font-weight:400;">({{ h.mode_label }}{{ ' · ' ~ h.ip_address if h.ip_address else '' }})</span>{% endblock %}
+{% block actions %}
+{% if can_write %}
+{# SSH 連入與設備 API 兩種模式都由伺服器主動檢查,皆可手動觸發;
+   只有 Agent 模式是目標機自行回報,無法從伺服器觸發。 #}
+{% if h.mode in ('ssh', 'api') %}
+<form method="post" action="/hosts/{{ h.id }}/run" style="display:inline;">
+  <button class="btn-primary" type="submit">立即檢查</button></form>
+{% if h.mode == 'ssh' %}
+<form method="post" action="/hosts/{{ h.id }}/run" style="display:inline;">
+  <input type="hidden" name="slow" value="1">
+  <button type="submit" title="含 world-writable / 無主檔案全磁碟掃描,耗時較久">完整檢查</button></form>
+{% endif %}
+{% endif %}
+<a class="btn" href="/hosts/{{ h.id }}/edit">編輯</a>
+<form method="post" action="/hosts/{{ h.id }}/delete" style="display:inline;"
+      onsubmit="return confirm('確定刪除「{{ h.name }}」?其所有檢查紀錄將一併刪除。');">
+  <button type="submit">刪除</button></form>
+{% endif %}
+{% endblock %}
+{% block content %}
+
+{% if msg %}
+<div class="card" style="margin-bottom:16px;border-color:var(--accent);">ℹ️ {{ msg }}</div>
+{% endif %}
+
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; align-items:start; margin-bottom:16px;">
+  <div class="card">
+    <h3 style="margin:0 0 12px;">基本資訊</h3>
+    <table style="min-width:0;">
+      <tbody>
+        <tr><td class="muted" style="width:120px;">類型 / 模式</td>
+          <td><span class="badge badge-muted">{{ h.type_label }}</span>
+            <span class="badge badge-muted">{{ h.mode_label }}</span>
+            {% if not h.enabled %}<span class="badge badge-muted">停用</span>{% endif %}
+            {% if h.offline_alerted %}<span class="badge badge-deny">失聯</span>{% endif %}</td></tr>
+        {% if h.mode == 'api' %}
+        {# 設備類型有帳密型與 token 型兩種,憑證狀態依實際欄位顯示(不寫死 Token) #}
+        <tr><td class="muted">連線</td>
+          <td class="mono">{{ h.ip_address }}:{{ h.ssh_port }}
+            <span class="muted">({{ h.username ~ ' / ' if h.username else '' }}{%
+              if h.password %}密碼已設定{% elif h.api_key %}API Token 已設定{%
+              else %}尚未設定憑證{% endif %})</span></td></tr>
+        <tr><td class="muted">排程</td>
+          <td>{{ '每 ' ~ h.interval_minutes ~ ' 分' if h.interval_minutes else '不排程(僅手動)' }}</td></tr>
+        {% elif h.mode == 'ssh' %}
+        <tr><td class="muted">連線</td>
+          <td class="mono">{{ h.username or '(未設帳號)' }}@{{ h.ip_address }}:{{ h.ssh_port }}
+            {% if h.private_key %}(私鑰){% elif h.password %}(密碼)
+            {% else %}<span style="color:var(--deny);">(尚未設定憑證)</span>{% endif %}</td></tr>
+        <tr><td class="muted">排程</td>
+          <td>{{ '每 ' ~ h.interval_minutes ~ ' 分' if h.interval_minutes else '不排程(僅手動)' }}
+            {{ '·含慢速掃描' if h.slow_scan else '' }}</td></tr>
+        {% else %}
+        <tr><td class="muted">回報主機名</td><td class="mono">{{ h.reported_hostname or '尚未回報' }}</td></tr>
+        {% endif %}
+        <tr><td class="muted">系統</td><td>{{ h.os_name or '—' }}
+          {% if h.kernel %}<span class="muted mono" style="font-size:12px;">({{ h.kernel }})</span>{% endif %}</td></tr>
+        <tr><td class="muted">腳本版本</td><td class="mono">{{ h.script_version or '—' }}</td></tr>
+        <tr><td class="muted">最後檢查</td>
+          <td>{{ h.last_checked_at.strftime('%F %H:%M') if h.last_checked_at else '從未' }}</td></tr>
+        {% if h.note %}<tr><td class="muted">備註</td><td>{{ h.note }}</td></tr>{% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if h.mode == 'agent' and can_write %}
+  <div class="card">
+    <h3 style="margin:0 0 4px;">Agent 一鍵安裝</h3>
+    <p class="muted" style="margin:0 0 10px;font-size:12.5px;">
+      以 root 於目標主機執行下列指令:安裝 /opt/ucc + systemd timer(每日定時檢查並回報),
+      並立即執行第一次檢查。指令含此主機專屬 token,請勿外流。</p>
+    <pre class="raw" id="install-cmd" style="user-select:all;">{{ install_cmd }}</pre>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <button type="button" id="btn-copy">複製指令</button>
+      <form method="post" action="/hosts/{{ h.id }}/token" style="display:inline;"
+            onsubmit="return confirm('重新產生 token 後,舊 token 立即失效,目標機需重跑安裝指令。確定?');">
+        <button type="submit">重新產生 token</button></form>
+      <span id="copy-result" class="muted" style="font-size:12.5px;"></span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if diff %}
+  <div class="card">
+    <h3 style="margin:0 0 12px;">與前次檢查的差異({{ diff|length }} 項)</h3>
+    <table style="min-width:0;">
+      <thead><tr><th>檢查項</th><th style="width:170px;">變化</th></tr></thead>
+      <tbody>
+        {% for d in diff %}
+        <tr>
+          <td><span class="tag mono">{{ d.item.item_id }}</span>
+            <div class="muted" style="font-size:12px;">{{ d.item.description }}</div></td>
+          <td>
+            {% if d.before %}<span class="badge badge-{{ d.before.status_css }}">{{ d.before.status_label }}</span>
+            → {% else %}<span class="muted">新項目 → </span>{% endif %}
+            <span class="badge badge-{{ d.item.status_css }}">{{ d.item.status_label }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card">
+    <h3 style="margin:0 0 12px;">與前次檢查的差異</h3>
+    <p class="muted">{{ '最近兩次成功檢查結果一致,無狀態變化。' if runs|selectattr('status', 'equalto', 'success')|list|length >= 2 else '需至少兩次成功檢查才能比較。' }}</p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 12px;">檢查歷史(近 {{ runs|length }} 次)</h3>
+  {% if runs %}
+  <table>
+    <thead><tr>
+      <th style="width:60px;">#</th><th style="width:140px;">開始時間</th>
+      <th style="width:80px;">狀態</th><th style="width:150px;">符合率</th>
+      <th style="width:200px;">符合 / 不符 / 注意 / 人工 / 不適用</th>
+      <th style="width:90px;">變化</th>
+      <th style="width:130px;"></th>
+    </tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td class="mono">{{ r.id }}</td>
+        <td class="muted">{{ r.started_at.strftime('%F %H:%M') }}</td>
+        <td>
+          {% if r.status == 'running' %}<span class="badge badge-warn">執行中</span>
+          {% elif r.status == 'failed' %}<span class="badge badge-deny">失敗</span>
+          {% else %}<span class="badge badge-allow">完成</span>{% endif %}
+          {% if r.slow %}<span class="badge badge-muted" title="含全磁碟慢速掃描">SLOW</span>{% endif %}
+        </td>
+        <td>
+          {% if r.status == 'success' %}
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="pbar {{ 'low' if r.pass_pct < 80 else '' }}" style="flex:1;">
+              <div style="width:{{ r.pass_pct }}%;"></div></div>
+            <span class="mono" style="font-size:12px;">{{ r.pass_pct }}%</span>
+          </div>
+          {% else %}<span class="muted" style="font-size:12px;">{{ r.message[:80] }}</span>{% endif %}
+        </td>
+        <td>
+          {% if r.status == 'success' %}
+          <span class="cnt">
+            <span class="c-pass">{{ r.c_pass }}</span>
+            <span class="c-fail">{{ r.c_fail }}</span>
+            <span class="c-warn">{{ r.c_warn }}</span>
+            <span class="c-manual">{{ r.c_manual }}</span>
+            <span class="c-na">{{ r.c_na }}</span>
+          </span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if r.status != 'success' %}<span class="muted">—</span>
+          {% elif r.id not in fail_delta %}<span class="delta delta-flat" title="首輪檢查,無前次可比">首輪</span>
+          {% elif fail_delta[r.id] > 0 %}<span class="delta delta-up" title="不符較前次增加 {{ fail_delta[r.id] }} 項">▲ +{{ fail_delta[r.id] }}</span>
+          {% elif fail_delta[r.id] < 0 %}<span class="delta delta-down" title="不符較前次減少 {{ -fail_delta[r.id] }} 項">▼ {{ fail_delta[r.id] }}</span>
+          {% else %}<span class="delta delta-flat" title="不符數與前次相同">─ 持平</span>{% endif %}
+        </td>
+        <td style="white-space:nowrap;">
+          <a class="btn" href="/runs/{{ r.id }}" style="padding:4px 10px;">明細</a>
+          {% if r.status == 'success' %}
+          <a class="btn" href="/runs/{{ r.id }}/diff" style="padding:4px 10px;">比較</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">尚無檢查紀錄。
+    {% if h.mode == 'agent' %}請先於目標主機執行上方安裝指令。
+    {% else %}請按右上「立即檢查」執行第一次檢查。{% endif %}</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  const btnCopy = document.getElementById('btn-copy');
+  if (btnCopy) btnCopy.addEventListener('click', () => {
+    const out = document.getElementById('copy-result');
+    navigator.clipboard.writeText(document.getElementById('install-cmd').textContent.trim())
+      .then(() => { out.textContent = '已複製'; out.style.color = 'var(--allow)'; })
+      .catch(() => { out.textContent = '複製失敗,請手動選取'; out.style.color = 'var(--deny)'; });
+  });
+</script>
+{% endblock %}

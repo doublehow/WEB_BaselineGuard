@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}檢查項目 — BaselineGuard{% endblock %}
+{% block page_title %}檢查項目{% endblock %}
+
+{% block head %}
+<style>
+  tr.cat-row td { background:var(--bg3); font-weight:700; font-size:12.5px;
+                  color:var(--text2); padding:6px 12px; }
+  tr.item-off td { opacity:.45; }
+  tr.item-off td:first-child { opacity:1; }   /* 開關本身保持可視 */
+  .switch { display:inline-flex; align-items:center; }
+  .switch input { width:34px; height:18px; appearance:none; cursor:pointer;
+    background:var(--bg3); border:1px solid var(--border); border-radius:99px;
+    position:relative; transition:background .15s; margin:0; }
+  .switch input::after { content:''; position:absolute; top:1.5px; left:2px;
+    width:13px; height:13px; border-radius:50%; background:var(--text3);
+    transition:all .15s; }
+  .switch input:checked { background:var(--allow); border-color:var(--allow); }
+  .switch input:checked::after { left:17px; background:#fff; }
+  .switch input:disabled { cursor:not-allowed; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="tabs" style="align-items:center;">
+  {% for fk, flabel in families.items() %}
+  <a href="/items?fam={{ fk }}" class="{{ 'on' if fam == fk else '' }}">{{ flabel }}</a>
+  {% endfor %}
+  {% if fam_implemented %}
+  <span class="muted" style="margin-left:auto;font-size:12.5px;">
+    共 {{ total }} 項,停用 <b id="disabled-count">{{ disabled_count }}</b> 項</span>
+  {% else %}
+  <span class="muted" style="margin-left:auto;font-size:12.5px;">規劃中</span>
+  {% endif %}
+</div>
+
+{% if not fam_implemented %}
+<div class="card" style="border-color:var(--warn);">
+  <h3 style="margin:0 0 6px;font-size:14px;color:var(--warn);">📋 規劃中的設備類型</h3>
+  <p class="muted" style="margin:0;font-size:13px;">
+    「{{ families[fam] }}」的檢查項目錄尚未建立。
+    {% if fam_note %}<br><b style="color:var(--text2);">目前狀態:</b>{{ fam_note }}{% endif %}</p>
+  <p class="muted" style="margin:8px 0 0;font-size:12px;">
+    實作前需完成可行性盤點(欲檢查項 → 所需資訊 → API/CLI 取得方式,真機驗證)與
+    來源查證(CIS/STIG/原廠 hardening guide)。</p>
+</div>
+{% else %}
+<div class="card" style="margin-bottom:16px;">
+  <p class="muted" style="margin:0;font-size:12.5px;">
+    停用的檢查項於<b>下一次檢查入庫時起</b>不再儲存與統計(兩種模式即刻生效,
+    毋須重新部署 Agent);已入庫的歷史紀錄不受影響。停用/啟用操作會寫入稽核紀錄。
+    {% if not can_write %}<b>目前為唯讀權限,無法變更。</b>{% endif %}</p>
+</div>
+
+<div class="card">
+  <table style="min-width:900px;">
+    <thead><tr>
+      <th style="width:60px;">啟用</th><th style="width:200px;">項目 ID</th>
+      <th>檢查內容</th><th style="width:190px;">出處</th>
+    </tr></thead>
+    <tbody>
+      {% for g in groups %}
+      {# g['items'] 下標存取:key 名為 items 會被 dict.items 方法遮蔽 #}
+      <tr class="cat-row"><td colspan="4">{{ g.cat }}({{ g['items']|length }} 項)</td></tr>
+      {% for it in g['items'] %}
+      <tr class="{{ 'item-off' if it.id in disabled else '' }}" id="row-{{ it.id }}">
+        <td>
+          <label class="switch">
+            <input type="checkbox" data-item="{{ it.id }}"
+                   {{ 'checked' if it.id not in disabled else '' }}
+                   {{ '' if can_write else 'disabled' }}>
+          </label>
+        </td>
+        <td class="mono" style="font-size:12px;">{{ it.id }}</td>
+        <td style="font-size:13px;">{{ it.desc }}</td>
+        <td class="muted" style="font-size:12px;">{{ it.ref }}</td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+  // 切換啟用狀態:即時 AJAX,失敗時還原開關
+  document.querySelectorAll('.switch input[data-item]').forEach(sw => {
+    sw.addEventListener('change', () => {
+      const itemId = sw.dataset.item;
+      const enabled = sw.checked;
+      sw.disabled = true;
+      fetch('/items/toggle', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+        body: JSON.stringify({family: '{{ fam }}', item_id: itemId, enabled: enabled}),
+      }).then(r => r.json()).then(d => {
+        if (!d.ok) throw new Error(d.message || d.error || '未知錯誤');
+        document.getElementById('row-' + itemId).classList.toggle('item-off', !enabled);
+        document.getElementById('disabled-count').textContent = d.disabled_count;
+        sw.disabled = false;
+      }).catch(e => {
+        sw.checked = !enabled;   // 還原
+        sw.disabled = false;
+        alert('變更失敗:' + e.message);
+      });
+    });
+  });
+</script>
+{% endblock %}

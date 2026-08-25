@@ -1,0 +1,234 @@
+{% extends "base.html" %}
+{% block title %}主機管理 — BaselineGuard{% endblock %}
+{% block page_title %}主機管理{% endblock %}
+{% block content %}
+
+{% if error %}
+<div class="card" style="margin-bottom:16px;border-color:var(--deny);color:var(--deny);">
+  ⚠️ {{ error }}</div>
+{% endif %}
+
+{% if can_write %}
+<div class="card" style="margin-bottom:20px;">
+  <h3 style="margin:0 0 4px;">新增主機</h3>
+  {# 說明依「設備類型 / 模式」下拉的當前選擇顯示對應那段(由 refreshForm 切換,
+     與下方連線欄位的切換同步):Linux 依模式(ssh/agent),網路設備依該型
+     conn(devssh/api,對應下拉的 [SSH]/[API]);無 JS 時全段顯示,不影響填寫 #}
+  <p class="muted" style="margin:0 0 14px;font-size:12.5px;">
+    <span data-desc="ssh"><b>SSH 連入</b>:本系統以 SSH 連入目標主機執行檢查,
+      支援排程與立即檢查(密碼或私鑰擇一,非 root 帳號需 sudo)。</span>
+    <span data-desc="agent"><b>Agent 回報</b>:建立後於主機詳情頁取得一鍵安裝指令,
+      目標機每日定時自行檢查並回報(適合無法從伺服器連入的主機)。</span>
+    <span data-desc="devssh"><b>SSH 連入</b>:本系統以 SSH 連入該設備的 CLI
+      執行唯讀指令檢查,支援排程與立即檢查(需 SSH 帳號密碼;埠帶入該型預設值)。</span>
+    <span data-desc="api"><b>設備 API</b>:本系統連入該設備的管理 API 執行唯讀檢查,
+      支援排程與立即檢查(連線欄位依設備類型自動切換:API Token 或帳密;
+      埠帶入該型預設值)。</span></p>
+  <form method="post" action="/hosts" class="form-grid">
+    <label>主機名稱(識別用,需唯一)
+      <input name="name" required placeholder="例:web-ap-01"></label>
+    <label>設備類型
+      <select name="device_type" id="host-devtype">
+        <option value="linux" data-port="22">Linux 主機 [SSH/Agent]</option>
+        {% for t in device_types %}
+        <option value="{{ t.key }}" data-port="{{ t.port }}"
+                {{ '' if t.implemented else 'disabled' }}>
+          {{ t.label }} [{{ conn_label[t.conn] }}]{{ '' if t.implemented else ' — 規劃中' }}</option>
+        {% endfor %}
+      </select></label>
+    <label id="mode-field">模式(Linux)
+      <select name="mode" id="host-mode">
+        <option value="ssh">SSH 連入(伺服器主動檢查)</option>
+        <option value="agent">Agent 回報(主機端定時回報)</option>
+      </select></label>
+    <label style="grid-column:1/-1;">備註
+      <input name="note" placeholder="用途、負責人等(選填)"></label>
+    <div id="conn-fields" style="display:contents;">
+      <label>IP 位址
+        <input name="ip_address" placeholder="例:10.0.0.10"></label>
+      <label>連接埠(SSH / 管理 API)
+        <input name="ssh_port" type="number" min="1" max="65535" value="22"></label>
+    </div>
+    <div id="api-fields" style="display:none;">
+      <label data-cred="username"><span class="cred-label">帳號</span>
+        <input name="username" autocomplete="off"></label>
+      <label data-cred="password"><span class="cred-label">密碼</span>
+        <input name="password" type="password" autocomplete="new-password"></label>
+      <label data-cred="api_key" style="grid-column:1/-1;"><span class="cred-label">API Token</span>
+        <span class="muted" style="font-weight:400;">——需含唯讀權限,並將本伺服器 IP 加入該 api-user 的 trusted host</span>
+        <input name="api_key" type="password" autocomplete="new-password"></label>
+    </div>
+    {# SSH 憑證逐台獨立填寫,平台不提供全域預設帳密 #}
+    <div id="ssh-fields" style="display:contents;">
+      <label>SSH 帳號
+        <input name="username" placeholder="例:ops(非 root 需 sudo)"
+               autocomplete="off"></label>
+      <label>SSH 密碼(用私鑰登入可留空)
+        <input name="password" type="password" autocomplete="new-password"
+               placeholder="密碼或私鑰擇一"></label>
+      <label style="grid-column:1/-1;">SSH 私鑰(與密碼擇一;貼上 PEM/OpenSSH 私鑰內容,支援 Ed25519/ECDSA/RSA)
+        <textarea name="private_key" rows="3" class="mono"
+                  placeholder="-----BEGIN OPENSSH PRIVATE KEY-----(有 passphrase 請填在上方密碼欄)"></textarea></label>
+      <label>sudo 密碼(留空 = 沿用上方 SSH 密碼)
+        <input name="sudo_password" type="password" autocomplete="new-password"
+               placeholder="root 直連或免密 sudo 可留空"></label>
+    </div>
+    <div id="sched-fields" style="display:contents;">
+      <label>排程間隔(分;0 = 不排程,僅手動;預設 1440 = 每日)
+        <input name="interval_minutes" type="number" min="0" max="43200" value="1440"></label>
+    </div>
+    <label id="slow-field" style="grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;">
+      <input type="checkbox" name="slow_scan" value="1" style="width:auto;">
+      檢查時含全磁碟慢速掃描(world-writable / 無主檔案;耗時較久)
+    </label>
+    <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center;">
+      <button class="btn-primary" type="submit">新增主機</button>
+      <button type="button" id="btn-test">連線測試</button>
+      <span id="test-result" class="muted" style="font-size:12.5px;"></span>
+    </div>
+  </form>
+</div>
+{% endif %}
+
+<div class="card">
+  <h3 style="margin:0 0 12px;">主機清單({{ hosts|length }})</h3>
+  {% if hosts %}
+  <table>
+    <thead><tr>
+      <th>名稱</th><th style="width:100px;">模式</th><th style="width:130px;">IP</th>
+      <th style="width:130px;">系統</th><th style="width:80px;">不符</th>
+      <th style="width:130px;">最後檢查</th><th style="width:70px;">狀態</th>
+      <th style="width:180px;"></th>
+    </tr></thead>
+    <tbody>
+      {% for h in hosts %}
+      {% set r = latest.get(h.id) %}
+      <tr>
+        <td><a href="/hosts/{{ h.id }}" style="color:var(--accent);text-decoration:none;">{{ h.name }}</a>
+          {% if not h.enabled %}<span class="badge badge-muted">停用</span>{% endif %}
+          {% if h.offline_alerted %}<span class="badge badge-deny">失聯</span>{% endif %}
+          {% if h.note %}<div class="muted" style="font-size:12px;">{{ h.note }}</div>{% endif %}
+        </td>
+        <td><span class="badge badge-muted">{{ h.mode_label if h.device_type == 'linux' else h.type_label }}</span></td>
+        <td class="mono">{{ h.ip_address or '—' }}</td>
+        <td class="muted" style="font-size:12px;">{{ h.os_name or '—' }}</td>
+        <td>{% if r and r.status == 'success' %}
+          <span class="badge {{ 'badge-deny' if r.c_fail else 'badge-allow' }}">{{ r.c_fail }}</span>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="muted">{{ h.last_checked_at.strftime('%m-%d %H:%M') if h.last_checked_at else '從未' }}</td>
+        <td>
+          {% if r is none %}<span class="badge badge-muted">無紀錄</span>
+          {% elif r.status == 'running' %}<span class="badge badge-warn">執行中</span>
+          {% elif r.status == 'failed' %}<span class="badge badge-deny">失敗</span>
+          {% else %}<span class="badge badge-allow">完成</span>{% endif %}
+        </td>
+        <td style="white-space:nowrap;">
+          {% if can_write %}
+          {# SSH 連入與設備 API 皆由伺服器主動檢查,可手動觸發;Agent 模式不行 #}
+          {% if h.mode in ('ssh', 'api') %}
+          <form method="post" action="/hosts/{{ h.id }}/run" style="display:inline;">
+            <button type="submit" title="立即執行一次檢查">檢查</button></form>
+          {% endif %}
+          <a class="btn" href="/hosts/{{ h.id }}/edit">編輯</a>
+          <form method="post" action="/hosts/{{ h.id }}/delete" style="display:inline;"
+                onsubmit="return confirm('確定刪除「{{ h.name }}」?其所有檢查紀錄將一併刪除。');">
+            <button type="submit">刪除</button></form>
+          {% else %}<span class="muted">唯讀</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">尚無主機 — 請使用上方表單新增。</p>
+  {% endif %}
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  // 每類型的連線欄位規格(比照 ERS TYPE_SPEC)
+  const TYPE_SPEC = {{ type_spec_json | safe }};
+  // 類型/模式切換:Linux 依模式決定 SSH 欄位;網路設備依 creds 顯示對應欄位
+  const typeSel = document.getElementById('host-devtype');
+  const modeSel = document.getElementById('host-mode');
+  const apiFields = document.getElementById('api-fields');
+  const sshFields = document.getElementById('ssh-fields');
+  // 隱藏區段的 input 一律 disable,避免與其他區段同名欄位(username/password)重複送出
+  function setSectionEnabled(section, on) {
+    if (!section) return;
+    section.style.display = on ? 'contents' : 'none';
+    section.querySelectorAll('input, select, textarea').forEach(el => {
+      el.disabled = !on;
+    });
+  }
+  function refreshForm() {
+    if (!typeSel) return;
+    const isLinux = typeSel.value === 'linux';
+    const isAgent = isLinux && modeSel.value === 'agent';
+    // 模式說明:只顯示當前選擇對應的那段(與下方連線欄位的切換同步);
+    // 網路設備依該型 conn 區分 SSH CLI(devssh)與管理 API(api)
+    const devConn = (TYPE_SPEC[typeSel.value] || {}).conn;
+    const activeMode = isLinux ? modeSel.value : (devConn === 'ssh' ? 'devssh' : 'api');
+    document.querySelectorAll('[data-desc]').forEach(el => {
+      el.style.display = el.dataset.desc === activeMode ? '' : 'none';
+    });
+    document.getElementById('mode-field').style.display = isLinux ? '' : 'none';
+    document.getElementById('conn-fields').style.display = isAgent ? 'none' : 'contents';
+    setSectionEnabled(sshFields, isLinux && modeSel.value === 'ssh');
+    setSectionEnabled(apiFields, !isLinux);
+    document.getElementById('sched-fields').style.display = isAgent ? 'none' : 'contents';
+    document.getElementById('slow-field').style.display = isLinux ? '' : 'none';
+    // 網路設備:依該類型 creds 顯示對應欄位,並套用標籤/placeholder
+    if (!isLinux) {
+      const spec = TYPE_SPEC[typeSel.value] || {creds: []};
+      const wanted = {};
+      spec.creds.forEach(([col, label, ph]) => { wanted[col] = [label, ph]; });
+      apiFields.querySelectorAll('label[data-cred]').forEach(lb => {
+        const col = lb.dataset.cred;
+        const inp = lb.querySelector('input');
+        const show = col in wanted;
+        lb.style.display = show ? '' : 'none';
+        inp.disabled = !show;
+        if (show) {
+          const lbEl = lb.querySelector('.cred-label');
+          if (lbEl) lbEl.textContent = wanted[col][0];
+          if (wanted[col][1]) inp.placeholder = wanted[col][1];
+        }
+      });
+    }
+    // 埠自動帶入該類型預設(僅在仍為他型預設值時切換,不覆寫手動輸入)
+    const portInput = document.querySelector('input[name="ssh_port"]');
+    const defaults = Array.from(typeSel.options).map(o => o.dataset.port);
+    const target = typeSel.selectedOptions[0].dataset.port;
+    if (defaults.includes(portInput.value)) portInput.value = target;
+  }
+  if (typeSel) {
+    typeSel.addEventListener('change', refreshForm);
+    modeSel.addEventListener('change', refreshForm);
+    refreshForm();
+  }
+  // 測試連線(用表單目前填的值,不需先儲存;依類型走 SSH 或設備 API)
+  const btnTest = document.getElementById('btn-test');
+  if (btnTest) btnTest.addEventListener('click', () => {
+    const f = document.querySelector('form[action="/hosts"]');
+    const out = document.getElementById('test-result');
+    out.textContent = '測試中…'; out.style.color = '';
+    // FormData 自動排除 disabled 欄位 → 只帶目前作用中區段的憑證
+    const fd = new FormData(f);
+    const payload = {device_type: typeSel ? typeSel.value : 'linux'};
+    for (const k of ['ip_address', 'ssh_port', 'username', 'password',
+                     'private_key', 'sudo_password', 'api_key']) {
+      payload[k] = fd.get(k) || '';
+    }
+    fetch('/hosts/test-connection', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: JSON.stringify(payload),
+    }).then(r => r.json()).then(d => {
+      out.textContent = d.message || d.error || '未知結果';
+      out.style.color = d.ok ? 'var(--allow)' : 'var(--deny)';
+    }).catch(e => { out.textContent = '測試失敗:' + e; out.style.color = 'var(--deny)'; });
+  });
+</script>
+{% endblock %}

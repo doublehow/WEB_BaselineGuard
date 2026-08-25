@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block title %}比較 #{{ run.id }} — BaselineGuard{% endblock %}
+{% block page_title %}<a href="{{ back_url }}" class="muted"
+   style="font-size:13px;font-weight:400;vertical-align:middle;margin-right:10px;">← 檢查紀錄</a>檢查比較 — {{ run.host_name }}{% endblock %}
+{% block actions %}
+<a class="btn" href="/runs/{{ run.id }}{{ src_qs }}">回明細</a>
+{% endblock %}
+{% block content %}
+
+{% if prev is none %}
+<div class="card"><p class="muted" style="margin:0;">
+  找不到更早的成功檢查紀錄,無法比較(需至少兩次成功檢查)。</p></div>
+{% else %}
+
+<div class="card" style="margin-bottom:16px;">
+  <span class="muted" style="font-size:12.5px;">
+    基準:#{{ prev.id }}({{ prev.started_at.strftime('%F %H:%M') }})
+    → 本次:#{{ run.id }}({{ run.started_at.strftime('%F %H:%M') }})
+    · 不符 {{ prev.c_fail }} → {{ run.c_fail }}
+    {% if run.c_fail < prev.c_fail %}<span class="badge badge-allow">改善 {{ prev.c_fail - run.c_fail }}</span>
+    {% elif run.c_fail > prev.c_fail %}<span class="badge badge-deny">惡化 {{ run.c_fail - prev.c_fail }}</span>
+    {% else %}<span class="badge badge-muted">持平</span>{% endif %}
+  </span>
+</div>
+
+{% if not changed and not added and not removed %}
+<div class="card"><p class="muted" style="margin:0;">✅ 兩次檢查結果完全一致,無任何變化。</p></div>
+{% endif %}
+
+{% if changed %}
+<div class="card" style="margin-bottom:16px;">
+  <h3 style="margin:0 0 12px;">狀態變化({{ changed|length }})</h3>
+  <table>
+    <thead><tr><th style="width:160px;">項目 ID</th><th style="width:170px;">變化</th><th>本次說明</th></tr></thead>
+    <tbody>
+      {% for c in changed %}
+      <tr>
+        <td class="mono" style="font-size:12px;">{{ c.cur.item_id }}</td>
+        <td><span class="badge badge-{{ c.prev.status_css }}">{{ c.prev.status_label }}</span>
+          → <span class="badge badge-{{ c.cur.status_css }}">{{ c.cur.status_label }}</span></td>
+        <td>{{ c.cur.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if added %}
+<div class="card" style="margin-bottom:16px;">
+  <h3 style="margin:0 0 12px;">新出現的項目({{ added|length }})</h3>
+  <table>
+    <thead><tr><th style="width:160px;">項目 ID</th><th style="width:80px;">結果</th><th>說明</th></tr></thead>
+    <tbody>
+      {% for r in added %}
+      <tr>
+        <td class="mono" style="font-size:12px;">{{ r.item_id }}</td>
+        <td><span class="badge badge-{{ r.status_css }}">{{ r.status_label }}</span></td>
+        <td>{{ r.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if removed %}
+<div class="card">
+  <h3 style="margin:0 0 12px;">消失的項目({{ removed|length }})</h3>
+  <p class="muted" style="font-size:12.5px;">上次有、本次沒有(例:套件移除後對應檢查不再出現)。</p>
+  <table>
+    <thead><tr><th style="width:160px;">項目 ID</th><th style="width:80px;">上次結果</th><th>上次說明</th></tr></thead>
+    <tbody>
+      {% for r in removed %}
+      <tr>
+        <td class="mono" style="font-size:12px;">{{ r.item_id }}</td>
+        <td><span class="badge badge-{{ r.status_css }}">{{ r.status_label }}</span></td>
+        <td>{{ r.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endif %}
+{% endblock %}

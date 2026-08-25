@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}儀表板 — BaselineGuard{% endblock %}
+{% block page_title %}儀表板{% endblock %}
+
+{% block head %}
+<style>
+  /* 圖表(純 CSS conic-gradient 甜甜圈 + 橫條列) */
+  .chart-grid { display:grid; gap:16px;
+    grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); margin-bottom:20px; }
+  .chart-card h3 { margin:0 0 4px; font-size:14px; }
+  .chart-card .sub { color:var(--text3); font-size:12px; margin:0 0 14px; }
+
+  .donut-wrap { display:flex; align-items:center; gap:22px; flex-wrap:wrap; }
+  .donut { width:132px; height:132px; border-radius:50%; flex-shrink:0;
+    background:conic-gradient(var(--_g)); position:relative; }
+  .donut::after { content:''; position:absolute; inset:24%; border-radius:50%;
+    background:var(--bg2); }
+  .donut-mid { position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; z-index:1; }
+  .donut-mid b { font-size:24px; font-weight:700; line-height:1; }
+  .donut-mid span { font-size:11px; color:var(--text3); }
+  .legend { display:flex; flex-direction:column; gap:7px; font-size:13px; }
+  .legend .row { display:flex; align-items:center; gap:8px; }
+  .legend .sw { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+  .legend .n { color:var(--text2); margin-left:auto; padding-left:14px;
+    font-variant-numeric:tabular-nums; }
+
+  .bars { display:flex; flex-direction:column; gap:8px; }
+  .bar-row { display:grid; grid-template-columns:150px 1fr 40px; align-items:center;
+    gap:10px; font-size:12.5px; }
+  .bar-row .lbl { overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    color:var(--text2); }
+  .bar-track { background:var(--bg3); border-radius:6px; height:16px; }
+  .bar-fill { height:100%; background:var(--deny); border-radius:6px; min-width:2px; }
+  .bar-row .n { text-align:right; color:var(--text2);
+    font-variant-numeric:tabular-nums; }
+
+  /* 近期異動:固定高度內捲動 + 釘選表頭 */
+  .recent-scroll { max-height:320px; overflow-y:auto; }
+  .recent-scroll thead th { position:sticky; top:0; background:var(--bg2); z-index:2; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="stat-grid">
+  <div class="card">
+    <div class="stat-label muted">受管主機</div>
+    <div class="stat-value">{{ total_hosts }}</div>
+  </div>
+  <div class="card">
+    <div class="stat-label muted">全數符合主機</div>
+    <div class="stat-value" style="color:var(--allow);">{{ ok_hosts }}</div>
+  </div>
+  <div class="card">
+    <div class="stat-label muted">平均符合率</div>
+    <div class="stat-value" style="{{ 'color:var(--deny);' if avg_pct < 80 and total_hosts else '' }}">{{ avg_pct }}%</div>
+  </div>
+  <div class="card">
+    <div class="stat-label muted">檢查失敗主機</div>
+    <div class="stat-value" style="{{ 'color:var(--deny);' if failed_hosts else '' }}">{{ failed_hosts }}</div>
+  </div>
+  <div class="card">
+    <div class="stat-label muted">Agent 失聯</div>
+    <div class="stat-value" style="{{ 'color:var(--deny);' if offline_hosts else '' }}">{{ offline_hosts }}</div>
+  </div>
+</div>
+
+<div class="chart-grid">
+  <div class="card chart-card">
+    <h3>檢查結果分布</h3>
+    <p class="sub">各主機最新成功檢查的全部項目加總</p>
+    {% if donut_status %}
+    <div class="donut-wrap">
+      <div class="donut" style="--_g:{{ donut_status.gradient }};">
+        <div class="donut-mid"><b>{{ avg_pct }}%</b><span>平均符合率</span></div>
+      </div>
+      <div class="legend">
+        {% for s in donut_status.legend %}
+        <div class="row"><span class="sw" style="background:var({{ s.var }});"></span>
+          {{ s.label }}<span class="n">{{ s.count }}（{{ s.pct }}%）</span></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}<p class="muted">尚無成功檢查資料。</p>{% endif %}
+  </div>
+
+  <div class="card chart-card">
+    <h3>主機狀態分布</h3>
+    <p class="sub">每台主機依最新一次檢查歸類</p>
+    {% if donut_hosts %}
+    <div class="donut-wrap">
+      <div class="donut" style="--_g:{{ donut_hosts.gradient }};">
+        <div class="donut-mid"><b>{{ total_hosts }}</b><span>主機</span></div>
+      </div>
+      <div class="legend">
+        {% for s in donut_hosts.legend %}
+        <div class="row"><span class="sw" style="background:var({{ s.var }});"></span>
+          {{ s.label }}<span class="n">{{ s.count }}（{{ s.pct }}%）</span></div>
+        {% endfor %}
+      </div>
+    </div>
+    {% else %}<p class="muted">尚無主機 — 請至「主機管理」新增。</p>{% endif %}
+  </div>
+
+  <div class="card chart-card">
+    <h3>跨主機共通不符項 Top 10</h3>
+    <p class="sub">受影響主機數;完整清單見「不符彙總」</p>
+    {% if top_fails %}
+    <div class="bars">
+      {% for t in top_fails %}
+      <div class="bar-row">
+        <span class="lbl mono" title="{{ t.desc }}">{{ t.item_id }}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:{{ t.pct }}%;"></div></div>
+        <span class="n">{{ t.count }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}<p class="muted">尚無不符項目 🎉</p>{% endif %}
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:20px;">
+  <h3 style="margin:0 0 12px;font-size:14px;">主機合規概況</h3>
+  {% if host_rows %}
+  <table>
+    <thead><tr>
+      <th>主機</th><th style="width:150px;">目標類型</th>
+      <th style="width:110px;">合規趨勢</th>
+      <th style="width:110px;">不符增減</th>
+      <th style="width:90px;">模式</th><th style="width:130px;">符合率</th>
+      <th style="width:70px;">不符</th><th style="width:70px;">注意</th>
+      <th style="width:90px;">變化</th>
+      <th style="width:120px;">最後檢查</th><th style="width:80px;">狀態</th>
+    </tr></thead>
+    <tbody>
+      {% for row in host_rows %}
+      {% set h = row.h %}{% set r = row.run %}
+      <tr class="{{ 'attention' if h.offline_alerted or (r and r.status == 'failed') else '' }}">
+        <td><a href="/hosts/{{ h.id }}" style="color:var(--accent);text-decoration:none;">{{ h.name }}</a>
+          {% if not h.enabled %}<span class="badge badge-muted">停用</span>{% endif %}
+          {% if h.offline_alerted %}<span class="badge badge-deny">失聯</span>{% endif %}
+        </td>
+        <td class="muted" style="font-size:12.5px;">{{ h.type_label }}</td>
+        <td>
+          {% set sp = sparks.get(h.id) %}
+          {% if sp %}
+          <svg width="{{ sp.w }}" height="{{ sp.h }}" viewBox="0 0 {{ sp.w }} {{ sp.h }}"
+               role="img" aria-label="近 {{ sp.vals|length }} 次符合率趨勢"
+               style="display:block;">
+            <title>近 {{ sp.vals|length }} 次符合率:{{ sp.vals|join('% → ') }}%</title>
+            {% if sp.vals|length > 1 %}
+            <polygon points="{{ sp.area }}"
+                     fill="color-mix(in srgb, var(--accent) 12%, transparent)"/>
+            <polyline points="{{ sp.points }}" fill="none" stroke="var(--accent)"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            {% endif %}
+            <circle cx="{{ sp.last[0] }}" cy="{{ sp.last[1] }}" r="2.5" fill="var(--accent)"/>
+          </svg>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% set cb = changes.get(h.id) %}
+          {% if cb %}
+          <svg width="{{ cb.w }}" height="{{ cb.h }}" viewBox="0 0 {{ cb.w }} {{ cb.h }}"
+               role="img" aria-label="近 {{ cb.vals|length }} 次不符增減"
+               style="display:block;">
+            <title>近 {{ cb.vals|length }} 次不符增減(+為改善):{{ cb.vals|join(', ') }}</title>
+            <line x1="0" y1="{{ cb.mid }}" x2="{{ cb.w }}" y2="{{ cb.mid }}"
+                  stroke="var(--border)" stroke-width="1"/>
+            {% for b in cb['items'] %}
+            <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ cb.bw }}" height="{{ b.bh }}" rx="1.5"
+                  fill="{{ 'var(--allow)' if b.dir == 'up' else ('var(--deny)' if b.dir == 'down' else 'var(--text3)') }}"
+                  {{ 'opacity=0.55' if b.dir == 'zero' else '' }}/>
+            {% endfor %}
+          </svg>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td><span class="badge badge-muted">{{ h.mode_label }}</span></td>
+        <td>
+          {% if r and r.status == 'success' %}
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="pbar {{ 'low' if r.pass_pct < 80 else '' }}" style="flex:1;">
+              <div style="width:{{ r.pass_pct }}%;"></div></div>
+            <span class="mono tnum" style="font-size:12px;">{{ r.pass_pct }}%</span>
+          </div>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>{% if r and r.status == 'success' %}
+          <span class="badge {{ 'badge-deny' if r.c_fail else 'badge-allow' }}">{{ r.c_fail }}</span>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{% if r and r.status == 'success' %}
+          <span class="badge {{ 'badge-warn' if r.c_warn else 'badge-muted' }}">{{ r.c_warn }}</span>
+          {% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>
+          {% if r is none or r.status != 'success' %}<span class="muted">—</span>
+          {% elif r.id not in fail_delta %}<span class="delta delta-flat" title="首輪檢查,無前次可比">首輪</span>
+          {% elif fail_delta[r.id] > 0 %}<span class="delta delta-up" title="不符較前次增加 {{ fail_delta[r.id] }} 項">▲ +{{ fail_delta[r.id] }}</span>
+          {% elif fail_delta[r.id] < 0 %}<span class="delta delta-down" title="不符較前次減少 {{ -fail_delta[r.id] }} 項">▼ {{ fail_delta[r.id] }}</span>
+          {% else %}<span class="delta delta-flat" title="不符數與前次相同">─ 持平</span>{% endif %}
+        </td>
+        <td class="muted">{{ h.last_checked_at.strftime('%m-%d %H:%M') if h.last_checked_at else '從未' }}</td>
+        <td>
+          {% if r is none %}<span class="badge badge-muted">無紀錄</span>
+          {% elif r.status == 'running' %}<span class="badge badge-warn">執行中</span>
+          {% elif r.status == 'failed' %}<span class="badge badge-deny">失敗</span>
+          {% else %}<span class="badge badge-allow">完成</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">尚無主機 — 請至「主機管理」新增。</p>
+  {% endif %}
+</div>
+
+<div class="card">
+  <h3 style="margin:0 0 4px;font-size:14px;">近期組態異動</h3>
+  <p class="muted" style="font-size:12px;margin:0 0 12px;">
+    檢查入庫時與該主機前一輪成功結果比對(累計 {{ change_total }} 筆;首輪檢查建基線不計)。</p>
+  {% if recent_changes %}
+  <div class="recent-scroll">
+  <table>
+    <thead><tr>
+      <th style="width:130px;">時間</th><th style="width:140px;">主機</th>
+      <th style="width:160px;">項目</th><th style="width:170px;">變化</th><th>目前說明</th>
+    </tr></thead>
+    <tbody>
+      {% for c in recent_changes %}
+      <tr>
+        <td class="mono" style="font-size:12px;">{{ c.detected_at.strftime('%m-%d %H:%M') }}</td>
+        <td><a href="/runs/{{ c.run_id }}" style="color:var(--accent);text-decoration:none;">{{ c.host_name }}</a></td>
+        <td class="mono" style="font-size:12px;">{{ c.item_id }}</td>
+        <td>
+          {% if not c.before_status %}<span class="muted">新項目 →</span>
+          {% else %}<span class="badge badge-{{ c.before_css }}">{{ c.before_label }}</span> →{% endif %}
+          {% if not c.after_status %}<span class="badge badge-muted">消失</span>
+          {% else %}<span class="badge badge-{{ c.after_css }}">{{ c.after_label }}</span>{% endif %}
+        </td>
+        <td style="font-size:12.5px;">{{ c.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0;">尚無異動紀錄(各主機第二輪檢查起開始比對)。</p>
+  {% endif %}
+</div>
+
+{% endblock %}

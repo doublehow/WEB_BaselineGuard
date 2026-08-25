@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}編輯 {{ h.name }} — BaselineGuard{% endblock %}
+{% block page_title %}編輯主機:{{ h.name }}{% endblock %}
+{% block content %}
+
+{% if error %}
+<div class="card" style="margin-bottom:16px;border-color:var(--deny);color:var(--deny);">
+  ⚠️ {{ error }}</div>
+{% endif %}
+
+{# 憑證欄位共用樣板:主欄位 + 「清除」核取方塊(留空=不變更、勾選=移除已存值)。
+   外層用 div 當 grid item,清除方塊自成一個 label,避免巢狀 label。 #}
+{% macro clear_box(field, label) %}
+<label style="flex-direction:row;align-items:center;gap:6px;margin-top:6px;font-size:12px;">
+  <input type="checkbox" name="clear_{{ field }}" value="1" style="width:auto;">
+  清除已存{{ label }}(勾選後儲存即移除)</label>
+{% endmacro %}
+
+<div class="card" style="max-width:860px;">
+  <p class="muted" style="margin:0 0 14px;font-size:12.5px;">
+    模式({{ h.mode_label }})與設備類型({{ h.type_label }})建立後不可變更。
+    憑證欄位<b>留空 = 不變更</b>(基於安全,編輯頁不回填明碼);要移除已存的憑證,
+    請勾選該欄下方的<b>「清除」</b>再儲存。</p>
+  <form method="post" action="/hosts/{{ h.id }}/edit" class="form-grid">
+    <label>主機名稱
+      <input name="name" value="{{ h.name }}" required></label>
+    <label style="flex-direction:row;align-items:center;gap:8px;margin-top:22px;">
+      <input type="checkbox" name="enabled" value="1" {{ 'checked' if h.enabled else '' }}
+             style="width:auto;">啟用(排程檢查 / 接受回報)
+    </label>
+    <label style="grid-column:1/-1;">備註
+      <input name="note" value="{{ h.note }}"></label>
+
+    {% if h.mode == 'api' %}
+    <label>IP 位址
+      <input name="ip_address" value="{{ h.ip_address }}"></label>
+    <label>管理 API 埠
+      <input name="ssh_port" type="number" min="1" max="65535" value="{{ h.ssh_port }}"></label>
+    {# 依該設備類型宣告的 creds 動態產生連線欄位(帳密型 vs token 型)。
+       表單缺欄位會在儲存時被視為「未送出」而保留原值,但帳號本來就該可編輯,
+       故一定要照 creds 完整列出。 #}
+    {% for col, clabel, cph in creds %}
+      {% if col == 'username' %}
+    <label>{{ clabel }}
+      <input name="username" value="{{ h.username }}" autocomplete="off"
+             placeholder="{{ cph }}"></label>
+      {% elif col == 'password' %}
+    <div>
+      <label>{{ clabel }}(留空 = 不變更;目前{{ '已設定' if h.password else '未設定' }})
+        <input name="password" type="password" autocomplete="new-password"
+               placeholder="{{ '已設定,留空不變更' if h.password else (cph or '未設定') }}"></label>
+      {{ clear_box('password', clabel) }}
+    </div>
+      {% elif col == 'api_key' %}
+    <div style="grid-column:1/-1;">
+      <label>{{ clabel }}(留空 = 不變更;目前{{ '已設定' if h.api_key else '未設定' }})
+        <input name="api_key" type="password" autocomplete="new-password"
+               placeholder="{{ '已設定,留空不變更' if h.api_key else (cph or '設備 api-user 核發') }}"></label>
+      {{ clear_box('api_key', clabel) }}
+    </div>
+      {% endif %}
+    {% endfor %}
+    <label>排程間隔(分;0 = 不排程)
+      <input name="interval_minutes" type="number" min="0" max="43200"
+             value="{{ h.interval_minutes }}"></label>
+
+    {% elif h.mode == 'ssh' %}
+    <label>IP 位址
+      <input name="ip_address" value="{{ h.ip_address }}"></label>
+    <label>SSH 埠
+      <input name="ssh_port" type="number" min="1" max="65535" value="{{ h.ssh_port }}"></label>
+    <label>SSH 帳號
+      <input name="username" value="{{ h.username }}" autocomplete="off"
+             placeholder="例:ops(非 root 需 sudo)"></label>
+    <div>
+      <label>SSH 密碼(留空 = 不變更)
+        <input name="password" type="password" autocomplete="new-password"
+               placeholder="{{ '已設定,留空不變更' if h.password else '未設定(密碼或私鑰擇一)' }}"></label>
+      {{ clear_box('password', '密碼') }}
+    </div>
+    <div style="grid-column:1/-1;">
+      <label>SSH 私鑰(留空 = 不變更;目前{{ '已設定' if h.private_key else '未設定' }})
+        <textarea name="private_key" rows="3" class="mono"
+                  placeholder="{{ '已設定,留空不變更' if h.private_key else '未設定(與密碼擇一;有 passphrase 請填在密碼欄)' }}"></textarea></label>
+      {{ clear_box('private_key', '私鑰') }}
+    </div>
+    <div>
+      <label>sudo 密碼(留空 = 不變更)
+        <input name="sudo_password" type="password" autocomplete="new-password"
+               placeholder="{{ '已設定,留空不變更' if h.sudo_password else '未設定(沿用 SSH 密碼)' }}"></label>
+      {{ clear_box('sudo_password', 'sudo 密碼') }}
+    </div>
+    <label>排程間隔(分;0 = 不排程)
+      <input name="interval_minutes" type="number" min="0" max="43200"
+             value="{{ h.interval_minutes }}"></label>
+    {% endif %}
+    {# Agent 模式不顯示連線欄位:路由端以 Form(None) 判定「表單沒送 = 保留原值」,
+       毋須用 hidden input 回填(那反而會把連線資訊印進 HTML)。 #}
+
+    <label style="grid-column:1/-1;flex-direction:row;align-items:center;gap:8px;">
+      <input type="checkbox" name="slow_scan" value="1" {{ 'checked' if h.slow_scan else '' }}
+             style="width:auto;">檢查時含全磁碟慢速掃描
+      {% if h.mode == 'agent' %}<span class="muted">(Agent 需重跑安裝指令才會套用)</span>{% endif %}
+    </label>
+    <div style="grid-column:1/-1;display:flex;gap:10px;align-items:center;">
+      <button class="btn-primary" type="submit">儲存</button>
+      <a class="btn" href="/hosts/{{ h.id }}">取消</a>
+      {% if h.mode in ('ssh', 'api') %}
+      <button type="button" id="btn-test">連線測試(憑證留空 = 用已存值)</button>
+      <span id="test-result" class="muted" style="font-size:12.5px;"></span>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+  const btnTest = document.getElementById('btn-test');
+  if (btnTest) btnTest.addEventListener('click', () => {
+    const f = document.querySelector('form[action="/hosts/{{ h.id }}/edit"]');
+    const out = document.getElementById('test-result');
+    out.textContent = '測試中…'; out.style.color = '';
+    // 依模式/設備類型出現的欄位不同 → 用 FormData 取值,不存在的欄位送空字串
+    // (後端會退回該主機已存的憑證;沿用已存憑證時只允許測該主機原本的 IP)
+    const fd = new FormData(f);
+    const payload = {host_id: {{ h.id }}, device_type: '{{ h.device_type }}'};
+    for (const k of ['ip_address', 'ssh_port', 'username', 'password',
+                     'private_key', 'sudo_password', 'api_key']) {
+      payload[k] = fd.get(k) || '';
+    }
+    fetch('/hosts/test-connection', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Accept': 'application/json'},
+      body: JSON.stringify(payload),
+    }).then(r => r.json()).then(d => {
+      out.textContent = d.message || d.error || '未知結果';
+      out.style.color = d.ok ? 'var(--allow)' : 'var(--deny)';
+    }).catch(e => { out.textContent = '測試失敗:' + e; out.style.color = 'var(--deny)'; });
+  });
+</script>
+{% endblock %}

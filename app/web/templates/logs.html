@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}紀錄 — BaselineGuard{% endblock %}
+{% block page_title %}紀錄{% endblock %}
+{% block content %}
+
+<div class="tabs">
+  <a href="/logs?tab=check" class="{{ 'on' if tab == 'check' else '' }}">檢查紀錄</a>
+  <a href="/logs?tab=audit" class="{{ 'on' if tab == 'audit' else '' }}">稽核紀錄</a>
+</div>
+
+{% if tab == 'check' %}
+<form method="get" action="/logs" class="filter-bar card" style="padding:12px 14px;gap:10px;">
+  <input type="hidden" name="tab" value="check">
+  <select name="host" onchange="this.form.submit()">
+    <option value="">所有主機</option>
+    {% for h in hosts %}
+    <option value="{{ h.id }}" {{ 'selected' if host_id == h.id|string else '' }}>{{ h.name }}</option>
+    {% endfor %}
+  </select>
+  <select name="status" onchange="this.form.submit()">
+    <option value="">所有狀態</option>
+    <option value="success" {{ 'selected' if status == 'success' else '' }}>完成</option>
+    <option value="failed" {{ 'selected' if status == 'failed' else '' }}>失敗</option>
+    <option value="running" {{ 'selected' if status == 'running' else '' }}>執行中</option>
+  </select>
+</form>
+
+<div class="card">
+  <table>
+    <thead><tr>
+      <th style="width:60px;">#</th><th>主機</th><th style="width:80px;">模式</th>
+      <th style="width:140px;">開始時間</th><th style="width:90px;">狀態</th>
+      <th style="width:150px;">符合率</th>
+      <th style="width:200px;">符合 / 不符 / 注意 / 人工 / 不適用</th>
+      <th style="width:90px;">變化</th>
+      <th style="width:130px;"></th>
+    </tr></thead>
+    <tbody>
+      {% for r in runs %}
+      <tr>
+        <td class="mono">{{ r.id }}</td>
+        <td><a href="/hosts/{{ r.host_id }}" style="color:var(--accent);text-decoration:none;">{{ r.host_name }}</a></td>
+        <td><span class="badge badge-muted">{{ {'agent': 'Agent', 'ssh': 'SSH', 'api': 'API'}.get(r.mode, r.mode) }}</span></td>
+        <td class="muted">{{ r.started_at.strftime('%m-%d %H:%M:%S') }}</td>
+        <td>
+          {% if r.status == 'running' %}<span class="badge badge-warn">執行中</span>
+          {% elif r.status == 'failed' %}<span class="badge badge-deny">失敗</span>
+          {% else %}<span class="badge badge-allow">完成</span>{% endif %}
+          {% if r.slow %}<span class="badge badge-muted">SLOW</span>{% endif %}
+        </td>
+        <td>
+          {% if r.status == 'success' %}
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div class="pbar {{ 'low' if r.pass_pct < 80 else '' }}" style="flex:1;">
+              <div style="width:{{ r.pass_pct }}%;"></div></div>
+            <span class="mono tnum" style="font-size:12px;">{{ r.pass_pct }}%</span>
+          </div>
+          {% else %}
+          <span class="muted" style="font-size:12px;display:inline-block;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
+                title="{{ r.message }}">{{ r.message }}</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if r.status == 'success' %}
+          <span class="cnt">
+            <span class="c-pass">{{ r.c_pass }}</span>
+            <span class="c-fail">{{ r.c_fail }}</span>
+            <span class="c-warn">{{ r.c_warn }}</span>
+            <span class="c-manual">{{ r.c_manual }}</span>
+            <span class="c-na">{{ r.c_na }}</span>
+          </span>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if r.status != 'success' %}<span class="muted">—</span>
+          {% elif r.id not in fail_delta %}<span class="delta delta-flat" title="首輪檢查,無前次可比">首輪</span>
+          {% elif fail_delta[r.id] > 0 %}<span class="delta delta-up" title="不符較前次增加 {{ fail_delta[r.id] }} 項">▲ +{{ fail_delta[r.id] }}</span>
+          {% elif fail_delta[r.id] < 0 %}<span class="delta delta-down" title="不符較前次減少 {{ -fail_delta[r.id] }} 項">▼ {{ fail_delta[r.id] }}</span>
+          {% else %}<span class="delta delta-flat" title="不符數與前次相同">─ 持平</span>{% endif %}
+        </td>
+        {# 帶上當前篩選(fh/fs),明細與比較頁的「返回」才能回到同一組條件 #}
+        <td style="white-space:nowrap;">
+          <a class="btn" href="/runs/{{ r.id }}?fh={{ host_id }}&fs={{ status }}"
+             style="padding:4px 10px;">明細</a>
+          {% if r.status == 'success' %}
+          <a class="btn" href="/runs/{{ r.id }}/diff?fh={{ host_id }}&fs={{ status }}"
+             style="padding:4px 10px;">比較</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="muted" style="text-align:center;padding:40px 0;">尚無紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="muted" style="font-size:12px;">顯示最近 200 筆;逾保留天數的紀錄由排程自動清理(設定頁可調)。</p>
+
+{% else %}
+<div class="card">
+  <table>
+    <thead><tr>
+      <th style="width:140px;">時間</th><th style="width:140px;">帳號</th>
+      <th style="width:150px;">動作</th><th>詳情</th>
+    </tr></thead>
+    <tbody>
+      {% for log in audit_logs %}
+      <tr>
+        <td class="muted">{{ log.ts.strftime('%m-%d %H:%M:%S') }}</td>
+        <td>{{ log.user or '—' }}</td>
+        <td><span class="badge badge-muted">{{ log.action }}</span></td>
+        <td>{{ log.detail }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted" style="text-align:center;padding:40px 0;">尚無紀錄</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% endblock %}
