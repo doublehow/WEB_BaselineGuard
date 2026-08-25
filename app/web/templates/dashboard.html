@@ -171,7 +171,7 @@
             {% for b in cb['items'] %}
             <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ cb.bw }}" height="{{ b.bh }}" rx="1.5"
                   fill="{{ 'var(--allow)' if b.dir == 'up' else ('var(--deny)' if b.dir == 'down' else 'var(--text3)') }}"
-                  {{ 'opacity=0.55' if b.dir == 'zero' else '' }}/>
+                  {% if b.dir == 'zero' %}opacity="0.55"{% endif %}/>
             {% endfor %}
           </svg>
           {% else %}<span class="muted">—</span>{% endif %}
