@@ -51,7 +51,7 @@
         <td>
           {% if r.status == 'success' %}
           <div style="display:flex;align-items:center;gap:8px;">
-            <div class="pbar {{ 'low' if r.pass_pct < 80 else '' }}" style="flex:1;">
+            <div class="pbar {{ 'p5' if r.pass_pct >= 80 else 'p4' if r.pass_pct >= 60 else 'p3' if r.pass_pct >= 40 else 'p2' if r.pass_pct >= 20 else 'p1' }}" style="flex:1;">
               <div style="width:{{ r.pass_pct }}%;"></div></div>
             <span class="mono tnum" style="font-size:12px;">{{ r.pass_pct }}%</span>
           </div>
