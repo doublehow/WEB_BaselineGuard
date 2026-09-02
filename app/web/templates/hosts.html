@@ -109,7 +109,7 @@
           {% if h.offline_alerted %}<span class="badge badge-deny">失聯</span>{% endif %}
           {% if h.note %}<div class="muted" style="font-size:12px;">{{ h.note }}</div>{% endif %}
         </td>
-        <td class="muted" style="font-size:12.5px;">{ h.type_label }</td>
+        <td class="muted" style="font-size:12.5px;">{{ h.type_label }}</td>
         <td>
           {% set sp = sparks.get(h.id) %}
           {% if sp %}
