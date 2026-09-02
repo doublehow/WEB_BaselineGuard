@@ -71,33 +71,48 @@ Linux 主機可選 Agent 或 SSH;網路設備一律走設備管理 API / CLI。�
 
 ## 技術架構
 
-**技術棧**:Python 3.14 + FastAPI / Uvicorn(單程序雙埠)、SQLAlchemy 2 + SQLite(WAL)、
-Jinja2 伺服器端渲染(零前端框架、零 CDN,圖表為純 CSS/inline SVG)、
-paramiko(SSH 連入)、httpx(設備 REST/XML API)、ldap3(AD NTLM)、
-pycryptodome(AES-256-GCM secret 加密);排程為內建 asyncio 迴圈(每分鐘 tick,
-到期主機以執行緒池並行檢查)。
+| 層 | 選擇 |
+|---|---|
+| 後端 | Python 3.14 / FastAPI + Uvicorn,單程序雙埠(Web UI 8073;Agent API 為獨立 FastAPI app,lifespan 內同程序另起第二個 uvicorn 綁 8074) |
+| 資料庫 | SQLite(WAL)+ SQLAlchemy 2.x(同步 Session);啟動時 `create_all` + 輕量遷移(新欄位冪等 ALTER 補進舊表),不用 Alembic |
+| 前端 | Jinja2 伺服器端渲染,零前端框架、零 CDN;側欄主控台、亮/暗主題;圖表為純 CSS(conic-gradient 甜甜圈)+ inline SVG(趨勢折線/增減長條) |
+| 驗證 | 本機帳號 + AD 網域登入(ldap3,NTLM);角色分權(全功能/唯讀) |
+| Session | Starlette SessionMiddleware(簽名 cookie,secret 落地於 config 自動生成) |
+| 檢查執行 | SSH 連入(paramiko,支援私鑰/passphrase/sudo)、設備 REST/XML API(httpx,9 型 driver 全唯讀)、Agent 回報(每台專屬 token + 腳本 HMAC-SHA256 簽章) |
+| 設定 | `config.json`(`UCC_*` 環境變數可覆寫;敏感欄位 AES-256-GCM 密文,金鑰 `data/secret.key`) |
+| 排程 | 內建 asyncio 迴圈(每分鐘 tick):到期主機執行緒池並行檢查、Agent 失聯偵測、紀錄保留清理 |
+| 告警 | Telegram / SMTP(轉態去重,可選恢復通知) |
+| 部署 | venv + `run.py` 單程序;Windows 可用工作排程器開機啟動 |
+
+## 目錄結構
 
 ```
-run.py                  # 進入點:uvicorn 起 Web UI(8073)
-app/
-├─ main.py              # FastAPI app、儀表板、登入 middleware、lifespan(排程/Agent API)
-├─ agent_api.py         # Agent API(獨立 FastAPI app,lifespan 內同程序另起 uvicorn 於 8074)
-├─ config.py            # config.json + UCC_* 環境變數(pydantic-settings)
-├─ database.py          # engine/session、init_db、保留天數清理
-├─ models.py            # Host / CheckRun / CheckResult / ResultChange / AuditLog…
-├─ auth.py              # 本機帳號 + AD(NTLM)、角色(全功能/唯讀)
-├─ secret_store.py      # AES-256-GCM 加密欄位(data/secret.key)
-├─ checker.py           # SSH 連入檢查執行器(上傳腳本/解析回報)
-├─ check_items.py       # Linux 檢查項目錄(deb/rpm 兩系,含出處條次)
-├─ devtypes.py          # 網路設備類型註冊表(連線欄位/檢查項/FAMILY_LABEL)
-├─ drivers/             # 9 型設備 driver(REST/XML API 或 SSH CLI,全唯讀)
-├─ scheduler.py         # 排程迴圈(SSH/API 定檢、Agent 失聯偵測、紀錄清理)
-├─ notify.py            # Telegram / SMTP 告警(轉態去重)
-├─ audit.py             # 稽核紀錄
-├─ webutil.py           # templates/render、CSV 匯出、sparkline/change-bar 趨勢計算
-├─ agent/ucc_check.sh   # Linux 檢查腳本(Agent 與 SSH 模式共用)
-├─ routes/              # Web UI 路由(見下表)
-└─ web/templates/       # Jinja2 模板(base + 12 頁)
+WEB_BaselineGuard/
+├── run.py               # 進入點:uvicorn 起 Web UI(8073)
+├── app/
+│   ├── main.py          # FastAPI app、儀表板、登入 middleware、lifespan(排程器、Agent API)
+│   ├── agent_api.py     # Agent API:/install /script /report(token 驗證 + HMAC 腳本簽章)
+│   ├── config.py        # config.json(pydantic-settings)、UCC_* 覆寫、local_now()
+│   ├── database.py      # engine、WAL PRAGMA、init_db(create_all + 輕量遷移)、保留清理
+│   ├── models.py        # Host / CheckRun / CheckResult / ResultChange / AuditLog…
+│   ├── auth.py          # 本機帳號 + AD(NTLM)驗證、roles_of()
+│   ├── secret_store.py  # AES-256-GCM 加密欄位(EncryptedStr,金鑰 data/secret.key)
+│   ├── checker.py       # SSH 連入檢查執行器(上傳腳本、解析回報、孤兒 run 復原)
+│   ├── check_items.py   # Linux 檢查項目錄(deb/rpm 兩系,含 CIS/TWGCB 出處條次)
+│   ├── devtypes.py      # 網路設備類型註冊表(連線欄位、FAMILY_LABEL、TYPE_SPEC)
+│   ├── drivers/         # 9 型設備 driver(FortiGate/PaloAlto/F5/NetScaler/Cisco/
+│   │                    #   Aruba/vCenter/NetApp/FortiAuth;REST/XML API 或 SSH CLI,全唯讀)
+│   ├── scheduler.py     # 排程迴圈(SSH/API 定檢、Agent 失聯偵測、清理)
+│   ├── notify.py        # Telegram / SMTP 告警
+│   ├── audit.py         # 稽核紀錄
+│   ├── webutil.py       # templates/render、CSV 匯出、sparkline/change-bar 趨勢計算
+│   ├── agent/ucc_check.sh   # Linux 檢查腳本(Agent 與 SSH 模式共用,deb/rpm 自動分支)
+│   ├── routes/          # Web UI 路由:auth / hosts / runs / gaps / items / versions
+│   │                    #   / logs / settings
+│   └── web/templates/   # Jinja2 模板(base + 12 頁)
+├── data/                # SQLite(configcheck.db)、secret.key(gitignore)
+├── config.json          # 全域設定(gitignore,首次啟動自動生成)
+└── requirements.txt
 ```
 
 **主要路由**(Web UI 8073,除登入頁外皆需 session;寫入操作需「全功能」角色):
