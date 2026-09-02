@@ -109,7 +109,7 @@
           {% if h.offline_alerted %}<span class="badge badge-deny">失聯</span>{% endif %}
           {% if h.note %}<div class="muted" style="font-size:12px;">{{ h.note }}</div>{% endif %}
         </td>
-        <td><span class="badge badge-muted">{{ h.mode_label if h.device_type == 'linux' else h.type_label }}</span></td>
+        <td><span class="badge badge-muted">{{ h.mode_label }}</span></td>
         <td class="mono">{{ h.ip_address or '—' }}</td>
         <td class="muted" style="font-size:12px;">{{ h.os_name or '—' }}</td>
         <td>{% if r and r.status == 'success' %}
