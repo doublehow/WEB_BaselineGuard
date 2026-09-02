@@ -80,8 +80,8 @@ TYPE_SPEC = {
 # 順序:Linux 兩組(內建、已實作)在前,網路設備類型在後。
 # hidden 者不列入(該型不會有自己的檢查項目錄,列出來只會是空分頁)。
 FAMILY_LABEL: dict[str, str] = {
-    "deb": "Ubuntu / Debian 系",
-    "rpm": "RHEL / Rocky 系",
+    "deb": "Ubuntu / Debian",
+    "rpm": "RHEL / Rocky",
 }
 for _t in DEVICE_TYPES:
     if not _t.get("hidden"):

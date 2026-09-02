@@ -4,9 +4,9 @@
 # BaselineGuard 平台配套版(SCRIPT_VERSION 見下)
 #
 # 支援發行版(自動偵測 /etc/os-release):
-#   - Ubuntu / Debian 系(deb):TWGCB-01-014《Ubuntu 22.04 LTS 政府組態基準》
+#   - Ubuntu / Debian(deb):TWGCB-01-014《Ubuntu 22.04 LTS 政府組態基準》
 #     v1.2、CIS Ubuntu 22.04 v2.0.0 / 24.04 v1.0.0
-#   - RHEL / Rocky / AlmaLinux 系(rpm):CIS RHEL 9 Benchmark v2.0.0
+#   - RHEL / Rocky / AlmaLinux(rpm):CIS RHEL 9 Benchmark v2.0.0
 #     (交叉參照 RHEL 8;/etc/shadow 0000 root:root 依 CIS §7.1.5)
 #   兩系共用穩定檢查項 ID,發行版特有項目(AppArmor/SELinux、APT/DNF 簽章)
 #   各有專屬 ID。本腳本為「檢查模式」:不修改任何設定。

@@ -12,9 +12,9 @@
 
 **Linux 主機**(單一檢查腳本自動偵測發行版,deb/rpm 雙分支):
 
-- **Ubuntu / Debian 系**:TWGCB-01-014《Ubuntu 22.04 LTS 政府組態基準》v1.2、
+- **Ubuntu / Debian**:TWGCB-01-014《Ubuntu 22.04 LTS 政府組態基準》v1.2、
   CIS Ubuntu 22.04 Benchmark v2.0.0 / 24.04 v1.0.0,交叉參照 DISA STIG
-- **RHEL / Rocky / AlmaLinux 系**:CIS RHEL 9 Benchmark v2.0.0(SELinux、
+- **RHEL / Rocky / AlmaLinux**:CIS RHEL 9 Benchmark v2.0.0(SELinux、
   firewalld、dnf-automatic、gpgcheck、system-auth/faillock.conf、
   shadow 0000 root:root 等 RHEL 專屬檢查)
 
