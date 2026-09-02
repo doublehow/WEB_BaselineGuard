@@ -81,6 +81,19 @@ def render(request: Request, name: str, active: str, **ctx):
         **role_flags(request),
         **ctx})
 
+def latest_run_map(db: Session) -> dict:
+    """各主機最新一筆 CheckRun(host_id → CheckRun),一次查完避免 N+1。
+
+    唯一實作:儀表板(main)與主機管理(routes/hosts)共用,
+    勿在各頁自行複製(先前兩份已出現簽名分歧)。"""
+    max_ids = [i for (i,) in
+               db.query(func.max(CheckRun.id)).group_by(CheckRun.host_id).all()]
+    if not max_ids:
+        return {}
+    return {r.host_id: r for r in
+            db.query(CheckRun).filter(CheckRun.id.in_(max_ids)).all()}
+
+
 def _sparkline(vals: list[int], w: int = 92, h: int = 24, pad: int = 3) -> dict | None:
     """符合率序列 → 迷你折線圖座標(模板直接渲染 inline SVG)。
 

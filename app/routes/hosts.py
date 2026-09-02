@@ -7,7 +7,6 @@ import secrets as _secrets
 
 from fastapi import APIRouter, Depends, Form, Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.audit import audit
@@ -19,21 +18,10 @@ from app.devtypes import (
     CONN_LABEL, TYPE_LABEL, TYPE_SPEC, implemented_device_types, visible_device_types,
 )
 from app.models import CheckResult, CheckRun, Host, MODE_LABELS, ResultChange
-from app.webutil import host_trends, render
+from app.webutil import host_trends, latest_run_map, render
 
 router = APIRouter()
 
-
-def _latest_run_map(db: Session, only_success: bool = False) -> dict[int, CheckRun]:
-    """各主機最新一筆 CheckRun,一次查完(避免逐主機 N+1)。"""
-    q = db.query(func.max(CheckRun.id)).group_by(CheckRun.host_id)
-    if only_success:
-        q = q.filter(CheckRun.status == "success")
-    max_ids = [i for (i,) in q.all()]
-    if not max_ids:
-        return {}
-    return {r.host_id: r for r in
-            db.query(CheckRun).filter(CheckRun.id.in_(max_ids)).all()}
 
 
 def _clamp_int(v, default: int, lo: int = 0, hi: int = 1_000_000) -> int:
@@ -50,19 +38,21 @@ def _new_token() -> str:
 # 刪除主機時 in_() 的分批大小(SQLite bind 變數上限:舊版 999 / 新版 32766)
 _DELETE_BATCH = 500
 
+# 設備類型規格(靜態常數):啟動時序列化一次,毋須每個 /hosts 請求重算
+_TYPE_SPEC_JSON = json.dumps(TYPE_SPEC)
+
 
 @router.get("/hosts")
 async def host_list(request: Request, db: Session = Depends(get_db),
                     error: str = ""):
     hosts = db.query(Host).order_by(Host.name).all()
     sparks, changes = host_trends(db)
-    import json as _json
     return render(request, "hosts.html", "hosts",
                   hosts=hosts, error=error, mode_labels=MODE_LABELS,
                   device_types=visible_device_types(),
                   conn_label=CONN_LABEL,
-                  type_spec_json=_json.dumps(TYPE_SPEC),
-                  latest=_latest_run_map(db),
+                  type_spec_json=_TYPE_SPEC_JSON,
+                  latest=latest_run_map(db),
                   sparks=sparks, changes=changes)
 
 

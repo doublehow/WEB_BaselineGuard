@@ -28,7 +28,7 @@ from app.routes import (
     auth, gaps, hosts, items_routes, logs_routes, runs, settings_routes,
     versions_routes,
 )
-from app.webutil import host_trends, render
+from app.webutil import host_trends, latest_run_map, render
 
 # 免登入路徑(Agent API 在獨立埠 8074,不經此 app)
 PUBLIC_PATHS = {"/login", "/logout", "/favicon.ico"}
@@ -192,15 +192,6 @@ def _donut(parts: list[tuple[str, int, str]]) -> dict | None:
     return {"gradient": ", ".join(stops), "legend": legend, "total": total}
 
 
-def _latest_run_map(db: Session) -> dict:
-    """各主機最新一筆 CheckRun,一次查完(避免逐主機 N+1)。"""
-    max_ids = [i for (i,) in db.query(func.max(CheckRun.id))
-               .group_by(CheckRun.host_id).all()]
-    if not max_ids:
-        return {}
-    return {r.host_id: r for r in
-            db.query(CheckRun).filter(CheckRun.id.in_(max_ids)).all()}
-
 
 @app.get("/api/status")
 async def status_api(db: Session = Depends(get_db)):
@@ -220,7 +211,7 @@ async def status_api(db: Session = Depends(get_db)):
 @app.get("/")
 async def dashboard(request: Request, db: Session = Depends(get_db)):
     hosts_all = db.query(Host).order_by(Host.name).all()
-    latest = _latest_run_map(db)
+    latest = latest_run_map(db)
 
     host_rows = [{"h": h, "run": latest.get(h.id)} for h in hosts_all]
     ok_hosts = sum(1 for r in host_rows
