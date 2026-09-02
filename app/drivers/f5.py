@@ -97,7 +97,7 @@ def _base(host) -> str:
 
 
 def _client(host) -> httpx.Client:
-    return httpx.Client(verify=ssl_verify(False), timeout=TIMEOUT,
+    return httpx.Client(verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT,
                         auth=(host.username, host.password))
 
 

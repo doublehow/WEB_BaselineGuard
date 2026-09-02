@@ -74,7 +74,7 @@ async def host_create(
     ip_address: str = Form(""), ssh_port: str = Form("22"),
     username: str = Form(""), password: str = Form(""),
     private_key: str = Form(""), sudo_password: str = Form(""),
-    api_key: str = Form(""),
+    api_key: str = Form(""), api_verify_ssl: str = Form(""),
     interval_minutes: str = Form("1440"), slow_scan: str = Form(""),
 ):
     n = name.strip()
@@ -105,7 +105,7 @@ async def host_create(
         ip_address=ip_address.strip(), ssh_port=_clamp_int(ssh_port, 22, 1, 65535),
         username=username.strip(), password=password,
         private_key=private_key.strip(), sudo_password=sudo_password,
-        api_key=api_key.strip(),
+        api_key=api_key.strip(), api_verify_ssl=bool(api_verify_ssl),
         interval_minutes=_clamp_int(interval_minutes, 1440, 0, 43200),
         slow_scan=bool(slow_scan),
         agent_token=_new_token() if mode == "agent" else "",
@@ -187,6 +187,7 @@ async def host_edit_save(
     clear_password: str = Form(""), clear_private_key: str = Form(""),
     clear_sudo_password: str = Form(""), clear_api_key: str = Form(""),
     clear_hostkey: str = Form(""),
+    api_verify_ssl: str = Form(""), api_verify_ssl_present: str = Form(""),
 ):
     """儲存主機編輯。
 
@@ -251,6 +252,10 @@ async def host_edit_save(
             return RedirectResponse(
                 f"/hosts/{host_id}/edit?error=SSH 模式需保留 SSH 密碼或私鑰(擇一),"
                 "不可兩者皆清除", status_code=303)
+    # TLS 驗證開關:checkbox 未勾不會出現在表單,需以 present 旗標區分
+    # 「表單有此欄(設備編輯頁)」與「表單根本沒這欄(Linux 頁)」
+    if api_verify_ssl_present:
+        h.api_verify_ssl = bool(api_verify_ssl)
     # SSH 主機金鑰(TOFU)重置:手動勾清除,或 IP 變更視同新主機
     if clear_hostkey or (h.ip_address or "").strip() != old_ip:
         h.ssh_hostkey = ""

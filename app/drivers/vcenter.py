@@ -68,7 +68,7 @@ def _session(client: httpx.Client, base: str, host) -> str:
 
 def test(host) -> tuple[bool, str]:
     try:
-        with httpx.Client(verify=ssl_verify(False), timeout=TIMEOUT) as c:
+        with httpx.Client(verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT) as c:
             base = _base(host)
             tok = _session(c, base, host)
             r = c.get(f"{base}/api/appliance/system/version",
@@ -90,7 +90,7 @@ def inspect(host) -> tuple[str, dict]:
     base = _base(host)
     data: dict = {}
     errors: dict[str, str] = {}
-    with httpx.Client(verify=ssl_verify(False), timeout=TIMEOUT) as c:
+    with httpx.Client(verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT) as c:
         tok = _session(c, base, host)
         h = {"vmware-api-session-id": tok}
         try:

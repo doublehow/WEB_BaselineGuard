@@ -36,6 +36,7 @@ async def settings_save(
     ad_service_password: str = Form(""),
     ad_allowed_group: str = Form(""),
     ad_base_dn: str = Form(""),
+    ad_use_ssl: str = Form(""),
     local_admin_password: str = Form(""),
     default_role: str = Form("readonly"),
     smtp_host: str = Form(""),
@@ -67,6 +68,7 @@ async def settings_save(
         "ad_service_user": ad_service_user.strip(),
         "ad_allowed_group": ad_allowed_group.strip(),
         "ad_base_dn": ad_base_dn.strip(),
+        "ad_use_ssl": bool(ad_use_ssl),
         "default_role": default_role if default_role in ROLE_LABELS else "readonly",
         "smtp_host": smtp_host.strip(),
         "smtp_port": _int(smtp_port, 25) or 25,
@@ -128,6 +130,7 @@ def _ad_test_run(data: dict) -> dict:
     svc_password = data.get("ad_service_password", "").strip() or settings.ad_service_password
     allowed_group = data.get("ad_allowed_group", "").strip()
     base_dn = data.get("ad_base_dn", "").strip()
+    use_ssl = bool(data.get("ad_use_ssl"))
     test_user = data.get("test_username", "").strip()
     test_pass = data.get("test_password", "")
 
@@ -158,7 +161,8 @@ def _ad_test_run(data: dict) -> dict:
     svc_bind_ok = False
     for ip in servers:
         try:
-            ldap_server = Server(ip, get_info=ALL, connect_timeout=5)
+            ldap_server = Server(ip, get_info=ALL, connect_timeout=5,
+                                 use_ssl=use_ssl)
             if svc_account and svc_password:
                 try:
                     conn = Connection(
@@ -195,7 +199,8 @@ def _ad_test_run(data: dict) -> dict:
     if test_user and test_pass:
         for ip in servers:
             try:
-                ldap_server = Server(ip, get_info=ALL, connect_timeout=5)
+                ldap_server = Server(ip, get_info=ALL, connect_timeout=5,
+                                 use_ssl=use_ssl)
                 try:
                     conn = Connection(
                         ldap_server, user=f"{domain}\\{test_user}",

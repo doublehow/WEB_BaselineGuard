@@ -52,7 +52,7 @@ def _base(host) -> str:
 
 def _client(host) -> httpx.Client:
     return httpx.Client(
-        verify=ssl_verify(False), timeout=TIMEOUT,
+        verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT,
         headers={"X-NITRO-USER": host.username,
                  "X-NITRO-PASS": host.password})
 

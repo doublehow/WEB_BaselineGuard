@@ -156,7 +156,8 @@ def authenticate_ad(username: str, password: str) -> tuple[bool, object]:
     if not server_ips:
         return False, "尚未設定 AD 伺服器"
 
-    servers = [Server(ip, get_info=ALL) for ip in server_ips]
+    servers = [Server(ip, get_info=ALL, use_ssl=settings.ad_use_ssl)
+               for ip in server_ips]
     server_pool = ServerPool(servers, pool_strategy=FIRST)
     full_svc = f"{domain}\\{svc_user}" if "\\" not in svc_user else svc_user
 

@@ -92,7 +92,7 @@ def _base(host) -> str:
 
 def _client(host) -> httpx.Client:
     return httpx.Client(headers={"X-PAN-KEY": host.api_key},
-                        verify=ssl_verify(False), timeout=TIMEOUT)
+                        verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT)
 
 
 def _get(client: httpx.Client, base: str, xpath: str) -> ET.Element:

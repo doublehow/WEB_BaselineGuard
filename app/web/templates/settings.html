@@ -33,6 +33,10 @@
     <label>Base DN(留空 = 自動偵測)
       <input name="ad_base_dn" id="ad-basedn" value="{{ s.ad_base_dn }}"
              placeholder="例:DC=example,DC=com"></label>
+    <label style="flex-direction:row;align-items:center;gap:8px;">
+      <input type="checkbox" name="ad_use_ssl" id="ad-use-ssl" value="1"
+             {{ 'checked' if s.ad_use_ssl else '' }} style="width:auto;">
+      LDAPS 加密連線(636 埠;AD 需具有效憑證,關閉 = 明文 389)</label>
     <label>未分權帳號的預設角色
       <select name="default_role">
         {% for rk, rlabel in role_labels.items() %}
@@ -196,6 +200,7 @@
         ad_service_password: document.getElementById('ad-svc-pass').value,
         ad_allowed_group: document.getElementById('ad-group').value,
         ad_base_dn: document.getElementById('ad-basedn').value,
+        ad_use_ssl: document.getElementById('ad-use-ssl').checked ? '1' : '',
         test_username: document.getElementById('ad-test-user').value,
         test_password: document.getElementById('ad-test-pass').value,
       }),

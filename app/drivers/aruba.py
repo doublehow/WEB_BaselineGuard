@@ -97,7 +97,7 @@ def _show(client, base, uid, headers, cmd) -> tuple[dict | None, str]:
 
 def test(host) -> tuple[bool, str]:
     try:
-        with httpx.Client(verify=ssl_verify(False), timeout=TIMEOUT,
+        with httpx.Client(verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT,
                           follow_redirects=True) as c:
             base = _base(host)
             uid, h = _login(c, base, host)
@@ -113,7 +113,7 @@ def inspect(host) -> tuple[str, dict]:
     base = _base(host)
     data: dict = {}
     errors: dict[str, str] = {}
-    with httpx.Client(verify=ssl_verify(False), timeout=TIMEOUT,
+    with httpx.Client(verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT,
                       follow_redirects=True) as c:
         try:
             uid, h = _login(c, base, host)

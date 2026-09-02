@@ -60,6 +60,13 @@
     </div>
       {% endif %}
     {% endfor %}
+    <div style="grid-column:1/-1;">
+      <input type="hidden" name="api_verify_ssl_present" value="1">
+      <label style="flex-direction:row;align-items:center;gap:8px;font-size:12.5px;">
+        <input type="checkbox" name="api_verify_ssl" value="1" style="width:auto;"
+               {{ 'checked' if h.api_verify_ssl else '' }}>
+        驗證設備 API 的 TLS 憑證(設備需具有效憑證;不勾 = 相容自簽憑證)</label>
+    </div>
     <label>排程間隔(分;0 = 不排程)
       <input name="interval_minutes" type="number" min="0" max="43200"
              value="{{ h.interval_minutes }}"></label>

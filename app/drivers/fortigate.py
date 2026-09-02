@@ -93,7 +93,7 @@ def _base(host) -> str:
 def _client(host) -> httpx.Client:
     return httpx.Client(
         headers={"Authorization": f"Bearer {host.api_key}"},
-        verify=ssl_verify(False), timeout=TIMEOUT)
+        verify=ssl_verify(bool(host.api_verify_ssl)), timeout=TIMEOUT)
 
 
 def _diag(status_code: int) -> str:

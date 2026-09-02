@@ -65,6 +65,10 @@ class Host(Base):
     # API 模式(網路設備):設備 API token / 金鑰
     api_key: Mapped[str] = mapped_column(EncryptedStr(1000), default="")
 
+    # API 模式:是否驗證設備 TLS 憑證(預設關,相容自簽/舊 appliance;
+    # 開啟後 MITM 無法攔截管理憑證,設備需具有效憑證)
+    api_verify_ssl: Mapped[bool] = mapped_column(Boolean, default=False)
+
     # SSH 主機金鑰 TOFU(公鑰非機敏,不加密):「keytype base64」;
     # 空 = 尚未記錄(首次連線寫入),之後不符即拒連(checker.verify_hostkey)
     ssh_hostkey: Mapped[str] = mapped_column(String(700), default="")

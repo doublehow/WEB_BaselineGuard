@@ -35,6 +35,7 @@ UI_FIELDS = (
     "ad_service_password",
     "ad_allowed_group",
     "ad_base_dn",
+    "ad_use_ssl",
     "local_admin_password",
     "default_role",
     # 系統層告警(Telegram 群組 + SMTP 系統收件人)
@@ -90,6 +91,7 @@ class Settings(BaseSettings):
     ad_service_password: str = ""
     ad_allowed_group: str = ""       # 允許登入的群組
     ad_base_dn: str = ""             # 例:DC=example,DC=com;留空自動偵測
+    ad_use_ssl: bool = False         # LDAPS(636):AD 需具有效憑證;關 = 明文 389
     local_admin_password: str = "admin"   # 本機備援登入(上線前務必改)
     default_role: str = "readonly"        # 未分權帳號的預設角色(見 auth.ROLE_LABELS)
 

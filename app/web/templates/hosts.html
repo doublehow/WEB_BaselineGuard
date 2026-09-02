@@ -57,6 +57,9 @@
       <label data-cred="api_key" style="grid-column:1/-1;"><span class="cred-label">API Token</span>
         <span class="muted" style="font-weight:400;">——需含唯讀權限,並將本伺服器 IP 加入該 api-user 的 trusted host</span>
         <input name="api_key" type="password" autocomplete="new-password"></label>
+      <label style="flex-direction:row;align-items:center;gap:8px;grid-column:1/-1;font-size:12.5px;">
+        <input type="checkbox" name="api_verify_ssl" value="1" style="width:auto;">
+        驗證設備 API 的 TLS 憑證(設備需具有效憑證;不勾 = 相容自簽憑證)</label>
     </div>
     {# SSH 憑證逐台獨立填寫,平台不提供全域預設帳密 #}
     <div id="ssh-fields" style="display:contents;">
