@@ -10,7 +10,7 @@ from fastapi.templating import Jinja2Templates
 
 from sqlalchemy.orm import Session
 
-from app.auth import ROLE_LABELS, roles_of
+from app.auth import ROLE_LABELS, resolve_roles_cached
 from app.models import CheckRun
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "web" / "templates"))
@@ -35,8 +35,12 @@ def session_user(request: Request) -> dict:
 
 
 def role_flags(request: Request) -> dict:
-    """角色權限旗標(僅供模板顯示;伺服器端於 route / middleware 強制)。"""
-    roles = roles_of(session_user(request))
+    """角色權限旗標(僅供模板顯示;伺服器端於 route / middleware 強制)。
+
+    與 middleware 同源:即時查分權表(短 TTL 快取)而非 session 快照,
+    避免撤權後按鈕仍顯示、按下去才 403 的不一致。"""
+    roles = set(resolve_roles_cached(
+        str(session_user(request).get("id", ""))))
     return {"can_write": "full_admin" in roles}
 
 
@@ -67,7 +71,7 @@ def csv_response(filename: str, header: list[str], rows) -> Response:
 
 def render(request: Request, name: str, active: str, **ctx):
     user = session_user(request)
-    roles = roles_of(user)
+    roles = set(resolve_roles_cached(str(user.get("id", ""))))   # 與 middleware 同源
     label = "、".join(ROLE_LABELS.get(r, r) for r in ROLE_LABELS if r in roles)
     return templates.TemplateResponse(request, name, {
         "nav": NAV, "active": active,

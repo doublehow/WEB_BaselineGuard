@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.agent_api import agent_app
-from app.auth import roles_of
+from app.auth import resolve_roles_cached
 from app.config import (
     ensure_session_secret, migrate_plaintext_secrets, purge_obsolete_fields,
     settings,
@@ -142,8 +142,11 @@ async def require_login(request: Request, call_next):
         if "application/json" in (request.headers.get("accept") or ""):
             return JSONResponse({"error": "未登入"}, status_code=401)
         return RedirectResponse("/login", status_code=303)
-    # 角色授權(伺服器端強制;模板隱藏按鈕只是 UI 禮貌)
-    roles = roles_of(user)
+    # 角色授權(伺服器端強制;模板隱藏按鈕只是 UI 禮貌)。
+    # 每請求經短 TTL 快取重查分權表,而非沿用登入當下的 session 快照,
+    # 撤權最晚 10 秒內生效;查表是阻塞 DB I/O,丟執行緒保持非阻塞
+    roles = set(await asyncio.to_thread(
+        resolve_roles_cached, str(user.get("id", ""))))
     if "full_admin" not in roles and request.method not in ("GET", "HEAD"):
         msg = "此帳號為唯讀權限,不可執行此寫入操作。"
         if "application/json" in (request.headers.get("accept") or ""):

@@ -89,6 +89,27 @@ def resolve_roles(username: str) -> list[str]:
     return [r for r in ROLE_LABELS if r in roles]
 
 
+_roles_cache: dict[str, tuple[float, list[str]]] = {}
+_ROLES_TTL = 10.0
+
+
+def resolve_roles_cached(username: str) -> list[str]:
+    """resolve_roles 的短 TTL 快取版(middleware / 模板每請求呼叫)。
+
+    授權即時化:角色不再沿用「登入當下」寫進 session 的快照——分權表
+    變更(如撤掉 full_admin)最晚 _ROLES_TTL 秒內對既有 session 生效,
+    不必等對方登出;快取避免每個請求都打一次 SQLite。
+    """
+    import time
+    now = time.monotonic()
+    hit = _roles_cache.get(username)
+    if hit and now - hit[0] < _ROLES_TTL:
+        return hit[1]
+    roles = resolve_roles(username)
+    _roles_cache[username] = (now, roles)
+    return roles
+
+
 def roles_of(user: dict) -> set:
     """session user → 角色集合(相容舊 session 只有單一 role 的情況)。"""
     return set((user or {}).get("roles") or [(user or {}).get("role", "readonly")])
