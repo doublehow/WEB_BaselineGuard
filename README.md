@@ -76,9 +76,9 @@ Linux 主機可選 Agent 或 SSH;網路設備一律走設備管理 API / CLI。�
 | 後端 | Python 3.14 / FastAPI + Uvicorn,單程序雙埠(Web UI 8073;Agent API 為獨立 FastAPI app,lifespan 內同程序另起第二個 uvicorn 綁 8074) |
 | 資料庫 | SQLite(WAL)+ SQLAlchemy 2.x(同步 Session);啟動時 `create_all` + 輕量遷移(新欄位冪等 ALTER 補進舊表),不用 Alembic |
 | 前端 | Jinja2 伺服器端渲染,零前端框架、零 CDN;側欄主控台、亮/暗主題;圖表為純 CSS(conic-gradient 甜甜圈)+ inline SVG(趨勢折線/增減長條) |
-| 驗證 | 本機帳號 + AD 網域登入(ldap3,NTLM);角色分權(全功能/唯讀) |
+| 驗證 | 本機帳號 + AD 網域登入(ldap3,NTLM,可選 LDAPS 636);角色分權(全功能/唯讀),分權變更每請求即時生效(10 秒 TTL 快取) |
 | Session | Starlette SessionMiddleware(簽名 cookie,secret 落地於 config 自動生成) |
-| 檢查執行 | SSH 連入(paramiko,支援私鑰/passphrase/sudo)、設備 REST/XML API(httpx,9 型 driver 全唯讀)、Agent 回報(每台專屬 token + 腳本 HMAC-SHA256 簽章) |
+| 檢查執行 | SSH 連入(paramiko,支援私鑰/passphrase/sudo,主機金鑰 TOFU 釘選)、設備 REST/XML API(httpx,9 型 driver 全唯讀,可逐台開啟 TLS 憑證驗證)、Agent 回報(每台專屬 token + 腳本 HMAC-SHA256 簽章,同主機 60 秒回報下限) |
 | 設定 | `config.json`(`UCC_*` 環境變數可覆寫;敏感欄位 AES-256-GCM 密文,金鑰 `data/secret.key`) |
 | 排程 | 內建 asyncio 迴圈(每分鐘 tick):到期主機執行緒池並行檢查、Agent 失聯偵測、紀錄保留清理 |
 | 告警 | Telegram / SMTP(轉態去重,可選恢復通知) |
@@ -109,7 +109,7 @@ WEB_BaselineGuard/
 │   ├── agent/ucc_check.sh   # Linux 檢查腳本(Agent 與 SSH 模式共用,deb/rpm 自動分支)
 │   ├── routes/          # Web UI 路由:auth / hosts / runs / gaps / items / versions
 │   │                    #   / logs / settings
-│   └── web/templates/   # Jinja2 模板(base + 12 頁)
+│   └── web/templates/   # Jinja2 模板(base + 12 頁 + _trends 趨勢圖巨集)
 ├── data/                # SQLite(configcheck.db)、secret.key(gitignore)
 ├── config.json          # 全域設定(gitignore,首次啟動自動生成)
 └── requirements.txt
@@ -181,6 +181,15 @@ Telegram 群組與/或 SMTP 系統收件人告警(轉態去重,可選「恢復�
   金鑰在 `data/secret.key` —— **備份 DB 務必連同金鑰**,遺失金鑰密文不可復原。
 - 檢查腳本與設備 driver **全程唯讀**:只稽核、不修改任何設定;SSH 模式僅在
   目標機 /tmp 產生暫存腳本與結果檔,執行後即刪除。
+- **SSH 主機金鑰 TOFU**:首次連線記錄目標主機金鑰,之後每次認證前比對,
+  不符即中斷(憑證不會送出)並可經告警得知;主機重灌/金鑰輪替時於編輯頁
+  勾「清除已記錄的 SSH 主機金鑰」重新信任(IP 變更自動重置)。
+- **設備 API TLS**:預設不驗證憑證(相容自簽/舊 appliance),可逐台開啟
+  「驗證設備 API TLS 憑證」;AD 登入可選 LDAPS(636)。
+- **匯出防護**:CSV 各儲存格對公式前綴(`= + - @` 等)自動消毒,防止
+  受稽核設備藉檢查描述對開啟報表的工作站發動公式注入。
+- **回報防灌**:Agent `/report` 同主機 60 秒最小間隔;版本歷程每主機
+  20,000 筆安全閥(正常用量遠低於此,觸發即修剪最舊並記警告)。
 - 檢查/稽核紀錄依保留天數自動清理(預設 365 天);版本歷程不受此清理,長期保存。
 
 ## Agent 目標機需求
