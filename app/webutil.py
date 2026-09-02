@@ -8,7 +8,10 @@ from fastapi import Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 
+from sqlalchemy.orm import Session
+
 from app.auth import ROLE_LABELS, roles_of
+from app.models import CheckRun
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "web" / "templates"))
 
@@ -61,3 +64,83 @@ def render(request: Request, name: str, active: str, **ctx):
         "role_label": label or "唯讀",
         **role_flags(request),
         **ctx})
+
+def _sparkline(vals: list[int], w: int = 92, h: int = 24, pad: int = 3) -> dict | None:
+    """符合率序列 → 迷你折線圖座標(模板直接渲染 inline SVG)。
+
+    y 軸用 min/max 加緩衝(平線置中),重點是趨勢形狀而非絕對刻度;
+    絕對值由 <title> 提示與旁邊的符合率欄承擔。
+    """
+    if not vals:
+        return None
+    lo, hi = min(vals), max(vals)
+    if hi - lo < 1:          # 全平序列:上下各留 1,讓線落在中間
+        lo, hi = lo - 1, hi + 1
+    n = len(vals)
+    pts = []
+    for i, v in enumerate(vals):
+        x = pad + (w - 2 * pad) * (i / (n - 1) if n > 1 else 0.5)
+        y = pad + (h - 2 * pad) * (1 - (v - lo) / (hi - lo))
+        pts.append((round(x, 1), round(y, 1)))
+    points = " ".join(f"{x},{y}" for x, y in pts)
+    area = (f"{pts[0][0]},{h - pad} " + points + f" {pts[-1][0]},{h - pad}")
+    return {"points": points, "area": area, "last": pts[-1],
+            "vals": vals, "w": w, "h": h}
+
+
+def _change_bars(deltas: list[int], w: int = 92, h: int = 24,
+                 pad: int = 2) -> dict | None:
+    """每次檢查的不符增減 → 紅綠長條(改善向上綠、惡化向下紅、持平中線刻度)。
+
+    deltas 為「改善量」(前次不符 − 本次不符):正 = 進步。
+    """
+    if not deltas:
+        return None
+    n = len(deltas)
+    slot = (w - 2 * pad) / n
+    bw = max(3, round(slot - 2, 1))
+    mid = h / 2
+    scale = (mid - 2) / max(1, max(abs(d) for d in deltas))
+    items = []
+    for i, d in enumerate(deltas):
+        x = round(pad + i * slot + (slot - bw) / 2, 1)
+        bh = round(abs(d) * scale, 1)
+        if d > 0:
+            items.append({"x": x, "y": round(mid - bh, 1), "bh": bh, "dir": "up"})
+        elif d < 0:
+            items.append({"x": x, "y": mid, "bh": bh, "dir": "down"})
+        else:
+            items.append({"x": x, "y": round(mid - 0.75, 1), "bh": 1.5,
+                          "dir": "zero"})
+    return {"w": w, "h": h, "mid": mid, "bw": bw, "items": items,
+            "vals": deltas}
+
+
+def host_trends(db: Session, host_ids: list[int],
+                 limit: int = 12) -> tuple[dict, dict]:
+    """各主機近 N 次成功檢查的趨勢(一次查完):
+
+    回傳 (sparks, changes):host_id → 符合率折線 / 不符增減長條。
+    """
+    if not host_ids:
+        return {}, {}
+    rows = (db.query(CheckRun.host_id, CheckRun.c_pass, CheckRun.c_fail)
+            .filter(CheckRun.host_id.in_(host_ids),
+                    CheckRun.status == "success")
+            .order_by(CheckRun.id).all())
+    pct_series: dict[int, list[int]] = {}
+    fail_series: dict[int, list[int]] = {}
+    for hid, cp, cf in rows:
+        denom = cp + cf
+        pct_series.setdefault(hid, []).append(
+            round(cp / denom * 100) if denom else 0)
+        fail_series.setdefault(hid, []).append(cf)
+    sparks = {hid: _sparkline(vals[-limit:])
+              for hid, vals in pct_series.items()}
+    changes = {}
+    for hid, fails in fail_series.items():
+        tail = fails[-(limit + 1):]
+        # 改善量 = 前次不符 − 本次不符(正 = 進步)
+        deltas = [tail[i - 1] - tail[i] for i in range(1, len(tail))]
+        changes[hid] = _change_bars(deltas[-limit:])
+    return sparks, changes

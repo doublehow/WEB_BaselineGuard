@@ -28,7 +28,7 @@ from app.routes import (
     auth, gaps, hosts, items_routes, logs_routes, runs, settings_routes,
     versions_routes,
 )
-from app.webutil import render
+from app.webutil import host_trends, render
 
 # 免登入路徑(Agent API 在獨立埠 8074,不經此 app)
 PUBLIC_PATHS = {"/login", "/logout", "/favicon.ico"}
@@ -189,87 +189,6 @@ def _donut(parts: list[tuple[str, int, str]]) -> dict | None:
     return {"gradient": ", ".join(stops), "legend": legend, "total": total}
 
 
-def _sparkline(vals: list[int], w: int = 92, h: int = 24, pad: int = 3) -> dict | None:
-    """符合率序列 → 迷你折線圖座標(模板直接渲染 inline SVG)。
-
-    y 軸用 min/max 加緩衝(平線置中),重點是趨勢形狀而非絕對刻度;
-    絕對值由 <title> 提示與旁邊的符合率欄承擔。
-    """
-    if not vals:
-        return None
-    lo, hi = min(vals), max(vals)
-    if hi - lo < 1:          # 全平序列:上下各留 1,讓線落在中間
-        lo, hi = lo - 1, hi + 1
-    n = len(vals)
-    pts = []
-    for i, v in enumerate(vals):
-        x = pad + (w - 2 * pad) * (i / (n - 1) if n > 1 else 0.5)
-        y = pad + (h - 2 * pad) * (1 - (v - lo) / (hi - lo))
-        pts.append((round(x, 1), round(y, 1)))
-    points = " ".join(f"{x},{y}" for x, y in pts)
-    area = (f"{pts[0][0]},{h - pad} " + points + f" {pts[-1][0]},{h - pad}")
-    return {"points": points, "area": area, "last": pts[-1],
-            "vals": vals, "w": w, "h": h}
-
-
-def _change_bars(deltas: list[int], w: int = 92, h: int = 24,
-                 pad: int = 2) -> dict | None:
-    """每次檢查的不符增減 → 紅綠長條(改善向上綠、惡化向下紅、持平中線刻度)。
-
-    deltas 為「改善量」(前次不符 − 本次不符):正 = 進步。
-    """
-    if not deltas:
-        return None
-    n = len(deltas)
-    slot = (w - 2 * pad) / n
-    bw = max(3, round(slot - 2, 1))
-    mid = h / 2
-    scale = (mid - 2) / max(1, max(abs(d) for d in deltas))
-    items = []
-    for i, d in enumerate(deltas):
-        x = round(pad + i * slot + (slot - bw) / 2, 1)
-        bh = round(abs(d) * scale, 1)
-        if d > 0:
-            items.append({"x": x, "y": round(mid - bh, 1), "bh": bh, "dir": "up"})
-        elif d < 0:
-            items.append({"x": x, "y": mid, "bh": bh, "dir": "down"})
-        else:
-            items.append({"x": x, "y": round(mid - 0.75, 1), "bh": 1.5,
-                          "dir": "zero"})
-    return {"w": w, "h": h, "mid": mid, "bw": bw, "items": items,
-            "vals": deltas}
-
-
-def _host_trends(db: Session, host_ids: list[int],
-                 limit: int = 12) -> tuple[dict, dict]:
-    """各主機近 N 次成功檢查的趨勢(一次查完):
-
-    回傳 (sparks, changes):host_id → 符合率折線 / 不符增減長條。
-    """
-    if not host_ids:
-        return {}, {}
-    rows = (db.query(CheckRun.host_id, CheckRun.c_pass, CheckRun.c_fail)
-            .filter(CheckRun.host_id.in_(host_ids),
-                    CheckRun.status == "success")
-            .order_by(CheckRun.id).all())
-    pct_series: dict[int, list[int]] = {}
-    fail_series: dict[int, list[int]] = {}
-    for hid, cp, cf in rows:
-        denom = cp + cf
-        pct_series.setdefault(hid, []).append(
-            round(cp / denom * 100) if denom else 0)
-        fail_series.setdefault(hid, []).append(cf)
-    sparks = {hid: _sparkline(vals[-limit:])
-              for hid, vals in pct_series.items()}
-    changes = {}
-    for hid, fails in fail_series.items():
-        tail = fails[-(limit + 1):]
-        # 改善量 = 前次不符 − 本次不符(正 = 進步)
-        deltas = [tail[i - 1] - tail[i] for i in range(1, len(tail))]
-        changes[hid] = _change_bars(deltas[-limit:])
-    return sparks, changes
-
-
 def _latest_run_map(db: Session) -> dict:
     """各主機最新一筆 CheckRun,一次查完(避免逐主機 N+1)。"""
     max_ids = [i for (i,) in db.query(func.max(CheckRun.id))
@@ -365,7 +284,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     fail_delta = fail_deltas(db, [r for r in latest.values()])
 
     # 各主機趨勢迷你圖(近 12 次成功檢查:符合率折線 + 不符增減長條)
-    sparks, changes = _host_trends(db, [h.id for h in hosts_all])
+    sparks, changes = host_trends(db, [h.id for h in hosts_all])
 
     # 近期異動(入庫時與前一輪比對;卡片固定高度內捲動,故多取一些)
     recent_changes = (db.query(ResultChange)

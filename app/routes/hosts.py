@@ -19,7 +19,7 @@ from app.devtypes import (
     CONN_LABEL, TYPE_LABEL, TYPE_SPEC, implemented_device_types, visible_device_types,
 )
 from app.models import CheckResult, CheckRun, Host, MODE_LABELS, ResultChange
-from app.webutil import render
+from app.webutil import host_trends, render
 
 router = APIRouter()
 
@@ -55,13 +55,15 @@ _DELETE_BATCH = 500
 async def host_list(request: Request, db: Session = Depends(get_db),
                     error: str = ""):
     hosts = db.query(Host).order_by(Host.name).all()
+    sparks, changes = host_trends(db, [x.id for x in hosts])
     import json as _json
     return render(request, "hosts.html", "hosts",
                   hosts=hosts, error=error, mode_labels=MODE_LABELS,
                   device_types=visible_device_types(),
                   conn_label=CONN_LABEL,
                   type_spec_json=_json.dumps(TYPE_SPEC),
-                  latest=_latest_run_map(db))
+                  latest=_latest_run_map(db),
+                  sparks=sparks, changes=changes)
 
 
 @router.post("/hosts")
