@@ -67,6 +67,8 @@ def _migrate(engine) -> None:
          "ALTER TABLE hosts ADD COLUMN device_type VARCHAR(20) DEFAULT 'linux'"),
         ("hosts", "api_key",
          "ALTER TABLE hosts ADD COLUMN api_key VARCHAR(500) DEFAULT ''"),
+        ("hosts", "ssh_hostkey",
+         "ALTER TABLE hosts ADD COLUMN ssh_hostkey VARCHAR(700) DEFAULT ''"),
     ]
     with engine.begin() as conn:
         for table, col, ddl in migrations:

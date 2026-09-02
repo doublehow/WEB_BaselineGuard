@@ -476,10 +476,40 @@ def _effective_creds(host: Host) -> tuple[str, str, str, str]:
     return username, host.password, host.private_key, sudo_pw
 
 
+def verify_hostkey(host, key) -> None:
+    """SSH 主機金鑰 TOFU 檢核:首次連線記錄(由呼叫端 session commit 落地),
+    之後不符即拋錯中斷。
+
+    此檢核發生在「認證之前」,密碼/私鑰尚未送出,可擋管理網段的 SSH
+    中間人竊取憑證。主機重灌或金鑰輪替時,於主機編輯頁勾「清除已記錄的
+    SSH 主機金鑰」重新信任(IP 變更亦自動重置)。
+    """
+    cur = f"{key.get_name()} {key.get_base64()}"
+    stored = (host.ssh_hostkey or "").strip()
+    if not stored:
+        host.ssh_hostkey = cur
+        return
+    if stored != cur:
+        raise RuntimeError(
+            "SSH 主機金鑰與先前記錄不符,已中斷連線(憑證未送出)。"
+            "可能原因:主機重灌、IP 重用或中間人攻擊;確認無虞後請於"
+            "主機編輯頁勾選「清除已記錄的 SSH 主機金鑰」再重試")
+
+
+class TofuHostKeyPolicy(paramiko.MissingHostKeyPolicy):
+    """paramiko SSHClient 用的 TOFU 政策(委派 verify_hostkey)。"""
+
+    def __init__(self, host):
+        self._host = host
+
+    def missing_host_key(self, client, hostname, key):
+        verify_hostkey(self._host, key)
+
+
 def _connect(host: Host) -> paramiko.SSHClient:
     username, password, pkey, _ = _effective_creds(host)
     client = paramiko.SSHClient()
-    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    client.set_missing_host_key_policy(TofuHostKeyPolicy(host))
     kwargs: dict = dict(
         hostname=host.ip_address, port=host.ssh_port or 22,
         username=username, timeout=CONNECT_TIMEOUT,

@@ -94,6 +94,14 @@
       <input name="interval_minutes" type="number" min="0" max="43200"
              value="{{ h.interval_minutes }}"></label>
     {% endif %}
+    {% if h.ssh_hostkey %}
+    <div style="grid-column:1/-1;">
+      <label style="flex-direction:row;align-items:center;gap:6px;font-size:12px;">
+        <input type="checkbox" name="clear_hostkey" value="1" style="width:auto;">
+        清除已記錄的 SSH 主機金鑰({{ h.ssh_hostkey.split(' ')[0] }};
+        主機重灌或金鑰更換時勾選,下次連線重新信任)</label>
+    </div>
+    {% endif %}
     {# Agent 模式不顯示連線欄位:路由端以 Form(None) 判定「表單沒送 = 保留原值」,
        毋須用 hidden input 回填(那反而會把連線資訊印進 HTML)。 #}
 

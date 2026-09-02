@@ -65,6 +65,10 @@ class Host(Base):
     # API 模式(網路設備):設備 API token / 金鑰
     api_key: Mapped[str] = mapped_column(EncryptedStr(1000), default="")
 
+    # SSH 主機金鑰 TOFU(公鑰非機敏,不加密):「keytype base64」;
+    # 空 = 尚未記錄(首次連線寫入),之後不符即拒連(checker.verify_hostkey)
+    ssh_hostkey: Mapped[str] = mapped_column(String(700), default="")
+
     # 最近一次檢查摘要(由 checker.save_report 維護)
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_run_status: Mapped[str] = mapped_column(String(10), default="")   # success/failed

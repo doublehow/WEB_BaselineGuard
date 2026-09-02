@@ -68,8 +68,14 @@ def _config_complete(out: str) -> bool:
 
 def _open(host):
     """回傳已認證的 paramiko Transport(FAC keyboard-interactive)。"""
+    from app.checker import verify_hostkey   # 函式內匯入避免載入順序耦合
     tp = paramiko.Transport((host.ip_address, host.ssh_port or 22))
     tp.start_client(timeout=CONNECT_TIMEOUT)
+    try:
+        verify_hostkey(host, tp.get_remote_server_key())   # 認證前 TOFU 檢核
+    except Exception:
+        tp.close()
+        raise
     tp.auth_interactive(host.username, _kbd(host.password))
     return tp
 

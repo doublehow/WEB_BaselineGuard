@@ -186,6 +186,7 @@ async def host_edit_save(
     interval_minutes: str | None = Form(None), slow_scan: str = Form(""),
     clear_password: str = Form(""), clear_private_key: str = Form(""),
     clear_sudo_password: str = Form(""), clear_api_key: str = Form(""),
+    clear_hostkey: str = Form(""),
 ):
     """儲存主機編輯。
 
@@ -198,6 +199,7 @@ async def host_edit_save(
     h = db.get(Host, host_id)
     if h is None:
         return RedirectResponse("/hosts", status_code=303)
+    old_ip = (h.ip_address or "").strip()
     n = name.strip()
     if not n:
         return RedirectResponse(
@@ -249,10 +251,14 @@ async def host_edit_save(
             return RedirectResponse(
                 f"/hosts/{host_id}/edit?error=SSH 模式需保留 SSH 密碼或私鑰(擇一),"
                 "不可兩者皆清除", status_code=303)
+    # SSH 主機金鑰(TOFU)重置:手動勾清除,或 IP 變更視同新主機
+    if clear_hostkey or (h.ip_address or "").strip() != old_ip:
+        h.ssh_hostkey = ""
     cleared = [lb for flag, lb in ((clear_password, "密碼"),
                                   (clear_sudo_password, "sudo 密碼"),
                                   (clear_private_key, "私鑰"),
-                                  (clear_api_key, "API Token")) if flag]
+                                  (clear_api_key, "API Token"),
+                                  (clear_hostkey, "SSH 主機金鑰")) if flag]
     db.commit()
     audit(request, "host_edit",
           f"編輯主機:{h.name}"

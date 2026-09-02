@@ -87,8 +87,9 @@ def _config_complete(out: str) -> bool:
 
 
 def _connect(host) -> paramiko.SSHClient:
+    from app.checker import TofuHostKeyPolicy   # 函式內匯入避免載入順序耦合
     ssh = paramiko.SSHClient()
-    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.set_missing_host_key_policy(TofuHostKeyPolicy(host))
     ssh.connect(host.ip_address, port=host.ssh_port or 22,
                 username=host.username, password=host.password,
                 timeout=CONNECT_TIMEOUT, allow_agent=False, look_for_keys=False)
