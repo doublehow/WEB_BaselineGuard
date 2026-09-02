@@ -159,6 +159,25 @@ async def require_login(request: Request, call_next):
     return await call_next(request)
 
 
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    """安全性回應標頭(ASVS V14.4)。
+
+    全站零 CDN、圖表為 inline CSS/SVG,CSP 僅允許同源 + inline;
+    frame-ancestors/X-Frame-Options 防登入頁被 iframe 嵌套(clickjacking)。
+    HSTS 不在此加:全站目前為 HTTP(已接受風險),上 TLS 時一併補。"""
+    resp = await call_next(request)
+    h = resp.headers
+    h.setdefault("X-Frame-Options", "DENY")
+    h.setdefault("X-Content-Type-Options", "nosniff")
+    h.setdefault("Referrer-Policy", "no-referrer")
+    h.setdefault("Content-Security-Policy",
+                 "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                 "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+                 "frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
+    return resp
+
+
 # SessionMiddleware 後加 → 最外層 → 先執行,讓 require_login 內能讀 request.session。
 # session_cookie 取專屬名稱:cookie 只認主機不分埠,同機其他 starlette 系統
 # 若都用預設名 "session" 會互相覆蓋、造成彼此莫名登出。
