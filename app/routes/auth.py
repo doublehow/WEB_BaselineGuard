@@ -28,8 +28,11 @@ async def login_page(request: Request, error: str = ""):
 async def login_submit(request: Request, username: str = Form(...),
                        password: str = Form(...)):
     uname = username.strip()
-    # 本機管理帳號(緊急備援,不經 AD;恆為管理者)
-    if uname == "admin" and password == settings.local_admin_password:
+    # 本機管理帳號(緊急備援,不經 AD;恆為管理者)。
+    # 空值防護:secret.key 遺失/損毀時 EncryptedStr 解密失敗會回空字串,
+    # 若不擋空值,攻擊者直接 POST 空密碼即可登入(fail-open)
+    if (uname == "admin" and settings.local_admin_password
+            and password == settings.local_admin_password):
         request.session["user"] = {"id": "admin", "name": "本機管理員",
                                    "role": "full_admin",
                                    "roles": ["full_admin"]}

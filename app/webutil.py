@@ -40,12 +40,23 @@ def role_flags(request: Request) -> dict:
     return {"can_write": "full_admin" in roles}
 
 
+def _csv_cell(v):
+    """防 CSV 公式注入:儲存格以 = + - @ Tab CR 開頭時前綴 '(Excel 視為文字)。
+
+    匯出欄位含受稽核設備回傳的描述文字(較低信任來源),被攻陷的受檢主機
+    可讓某檢查項描述以 =HYPERLINK/=cmd| 開頭,對開啟 CSV 的稽核人員工作站
+    發動公式/DDE 攻擊——在此單點消毒,全站三個匯出點一併覆蓋。"""
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@", chr(9), chr(13)):
+        return "'" + v
+    return v
+
+
 def csv_response(filename: str, header: list[str], rows) -> Response:
     """CSV 下載回應:UTF-8 BOM 讓 Excel 直接開啟不亂碼;中文檔名走 RFC 5987。"""
     buf = io.StringIO()
     w = csv.writer(buf)
     w.writerow(header)
-    w.writerows(rows)
+    w.writerows([_csv_cell(c) for c in row] for row in rows)
     return Response(
         "\ufeff" + buf.getvalue(),
         media_type="text/csv; charset=utf-8",

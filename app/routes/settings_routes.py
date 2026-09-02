@@ -136,6 +136,21 @@ def _ad_test_run(data: dict) -> dict:
         return {"ok": False, "steps": steps, "message": "AD Server IP 或 Domain 未填寫"}
 
     servers = [s.strip() for s in server_ips_raw.replace("，", ",").split(",") if s.strip()]
+
+    # 防憑證外送:密碼欄留空 = 沿用「已儲存」的 service 密碼,此時測試目標
+    # 必須是已儲存的 AD 伺服器——否則可將已存密碼指向攻擊者架的 rogue LDAP
+    # 擷取 NTLM 交握離線破解(比照 hosts test-connection 的 IP 綁定)
+    if (not data.get("ad_service_password", "").strip()
+            and settings.ad_service_password):
+        rogue = [ip for ip in servers if ip not in set(settings.ad_servers)]
+        if rogue:
+            audit(None, "ad_test_blocked",
+                  f"AD 測試遭拒:沿用已存密碼但目標 {rogue} 不在已儲存清單")
+            return {"ok": False, "steps": steps, "message":
+                    "使用已儲存的 Service 密碼時,Server 僅限已儲存的 AD 伺服器"
+                    f"({', '.join(settings.ad_servers) or '未設定'});"
+                    "測試其他伺服器請一併輸入該環境的密碼"}
+
     steps.append({"label": "設定解析", "ok": True,
                   "detail": f"Server: {servers},Domain: {domain}"})
 
@@ -208,8 +223,8 @@ def _ad_test_run(data: dict) -> dict:
                             except Exception:  # noqa: BLE001
                                 member_of = []
                             conn2.unbind()
-                            match = any(allowed_group.lower() in str(dn).lower()
-                                        for dn in member_of)
+                            from app.auth import group_match
+                            match = group_match(member_of, allowed_group)
                             steps.append({
                                 "label": "群組驗證", "ok": match,
                                 "detail": (f"共 {len(member_of)} 個群組,"

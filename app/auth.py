@@ -94,6 +94,21 @@ def roles_of(user: dict) -> set:
     return set((user or {}).get("roles") or [(user or {}).get("role", "readonly")])
 
 
+def group_match(member_of, allowed_group: str) -> bool:
+    """群組授權比對:取每個群組 DN 的第一個 RDN(CN=值)不分大小寫精確相等。
+
+    不用子字串比對——「BG-Admins」不可放行「BG-Admins-Test」,也不可因
+    DN 路徑(OU 名)恰含該字串而誤放行。"""
+    want = (allowed_group or "").strip().lower()
+    if not want:
+        return False
+    for gdn in member_of or []:
+        rdn = str(gdn).split(",", 1)[0].strip()
+        if rdn.lower().startswith("cn=") and rdn[3:].strip().lower() == want:
+            return True
+    return False
+
+
 def authenticate_ad(username: str, password: str) -> tuple[bool, object]:
     """回傳 (True, {'id','name'}) 或 (False, 錯誤訊息字串)。"""
     # 統一帳號格式為純 sAMAccountName
@@ -170,9 +185,8 @@ def authenticate_ad(username: str, password: str) -> tuple[bool, object]:
         user_info = {"id": username, "name": display_name}
         if not allowed_group:
             return True, user_info
-        for gdn in member_of:
-            if f"CN={allowed_group}" in gdn or allowed_group.lower() in gdn.lower():
-                return True, user_info
+        if group_match(member_of, allowed_group):
+            return True, user_info
         return False, f"驗證通過,但您不在授權群組({allowed_group})內"
 
     except Exception as exc:  # noqa: BLE001
