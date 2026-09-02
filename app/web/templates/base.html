@@ -158,6 +158,10 @@
     .pbar.p3 > div { background:var(--yellow); }
     .pbar.p2 > div { background:var(--orange); }
     .pbar.p1 > div { background:var(--deny); }
+    /* 同色階的文字色(如儀表板 KPI 數字);門檻由 webutil 的 pct_tier 統一 */
+    .tier-p5 { color:var(--sky); }    .tier-p4 { color:var(--allow); }
+    .tier-p3 { color:var(--yellow); } .tier-p2 { color:var(--orange); }
+    .tier-p1 { color:var(--deny); }
 
     /* ===== 表單 ===== */
     .form-grid { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:12px 18px; }

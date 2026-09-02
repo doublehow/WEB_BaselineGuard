@@ -41,6 +41,7 @@
 </style>
 {% endblock %}
 
+{% import "_trends.html" as trends %}
 {% block content %}
 
 <div class="stat-grid">
@@ -54,7 +55,7 @@
   </div>
   <div class="card">
     <div class="stat-label muted">平均符合率</div>
-    <div class="stat-value" style="{{ 'color:var(--deny);' if avg_pct < 80 and total_hosts else '' }}">{{ avg_pct }}%</div>
+    <div class="stat-value {{ 'tier-' ~ (avg_pct|pct_tier) if total_hosts else '' }}">{{ avg_pct }}%</div>
   </div>
   <div class="card">
     <div class="stat-label muted">檢查失敗主機</div>
@@ -142,45 +143,12 @@
           {% if h.offline_alerted %}<span class="badge badge-deny">失聯</span>{% endif %}
         </td>
         <td class="muted" style="font-size:12.5px;">{{ h.type_label }}</td>
-        <td>
-          {% set sp = sparks.get(h.id) %}
-          {% if sp %}
-          <svg width="{{ sp.w }}" height="{{ sp.h }}" viewBox="0 0 {{ sp.w }} {{ sp.h }}"
-               role="img" aria-label="近 {{ sp.vals|length }} 次符合率趨勢"
-               style="display:block;">
-            <title>近 {{ sp.vals|length }} 次符合率:{{ sp.vals|join('% → ') }}%</title>
-            {% if sp.vals|length > 1 %}
-            <polygon points="{{ sp.area }}"
-                     fill="color-mix(in srgb, var(--accent) 12%, transparent)"/>
-            <polyline points="{{ sp.points }}" fill="none" stroke="var(--accent)"
-                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            {% endif %}
-            <circle cx="{{ sp.last[0] }}" cy="{{ sp.last[1] }}" r="2.5" fill="var(--accent)"/>
-          </svg>
-          {% else %}<span class="muted">—</span>{% endif %}
-        </td>
-        <td>
-          {% set cb = changes.get(h.id) %}
-          {% if cb %}
-          <svg width="{{ cb.w }}" height="{{ cb.h }}" viewBox="0 0 {{ cb.w }} {{ cb.h }}"
-               role="img" aria-label="近 {{ cb.vals|length }} 次不符增減"
-               style="display:block;">
-            <title>近 {{ cb.vals|length }} 次不符增減(+為改善):{{ cb.vals|join(', ') }}</title>
-            <line x1="0" y1="{{ cb.mid }}" x2="{{ cb.w }}" y2="{{ cb.mid }}"
-                  stroke="var(--border)" stroke-width="1"/>
-            {% for b in cb['items'] %}
-            <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ cb.bw }}" height="{{ b.bh }}" rx="1.5"
-                  fill="{{ 'var(--allow)' if b.dir == 'up' else ('var(--deny)' if b.dir == 'down' else 'var(--text3)') }}"
-                  {% if b.dir == 'zero' %}opacity="0.55"{% endif %}/>
-            {% endfor %}
-          </svg>
-          {% else %}<span class="muted">—</span>{% endif %}
-        </td>
+        {{ trends.trend_cells(sparks.get(h.id), changes.get(h.id)) }}
         <td><span class="badge badge-muted">{{ h.mode_label }}</span></td>
         <td>
           {% if r and r.status == 'success' %}
           <div style="display:flex;align-items:center;gap:8px;">
-            <div class="pbar {{ 'p5' if r.pass_pct >= 80 else 'p4' if r.pass_pct >= 60 else 'p3' if r.pass_pct >= 40 else 'p2' if r.pass_pct >= 20 else 'p1' }}" style="flex:1;">
+            <div class="pbar {{ r.pass_pct|pct_tier }}" style="flex:1;">
               <div style="width:{{ r.pass_pct }}%;"></div></div>
             <span class="mono tnum" style="font-size:12px;">{{ r.pass_pct }}%</span>
           </div>

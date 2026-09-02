@@ -16,6 +16,19 @@ from app.models import CheckRun
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "web" / "templates"))
 
+
+def _pct_tier(pct) -> str:
+    """符合率 → 五段色階 class(對應 base.html 的 .pbar.p* / .tier-p*)。
+
+    門檻唯一定義點:p5 水藍 80-100、p4 綠 60-80、p3 黃 40-60、
+    p2 橘 20-40、p1 紅 <20。模板一律用 |pct_tier,勿重寫門檻鏈。"""
+    p = pct or 0
+    return ("p5" if p >= 80 else "p4" if p >= 60 else
+            "p3" if p >= 40 else "p2" if p >= 20 else "p1")
+
+
+templates.env.filters["pct_tier"] = _pct_tier
+
 NAV = [
     ("dashboard", "/", "儀表板"),
     ("hosts", "/hosts", "主機管理"),

@@ -1,7 +1,13 @@
 {% extends "base.html" %}
 {% block title %}主機管理 — BaselineGuard{% endblock %}
 {% block page_title %}主機管理{% endblock %}
+{% import "_trends.html" as trends %}
 {% block content %}
+<style>
+  /* 11 欄固定寬總和超出 1366px 筆電的可用寬度,操作欄會被推出畫面;
+     窄螢幕優先保住操作按鈕,隱藏可從他欄推知的目標類型/系統 */
+  @media (max-width: 1459px) { .hide-narrow { display: none; } }
+</style>
 
 {% if error %}
 <div class="card" style="margin-bottom:16px;border-color:var(--deny);color:var(--deny);">
@@ -98,8 +104,8 @@
   {% if hosts %}
   <table>
     <thead><tr>
-      <th>名稱</th><th style="width:110px;">目標類型</th><th style="width:100px;">合規趨勢</th><th style="width:110px;">不符增減</th><th style="width:100px;">模式</th><th style="width:130px;">IP</th>
-      <th style="width:130px;">系統</th><th style="width:80px;">不符</th>
+      <th>名稱</th><th style="width:110px;" class="hide-narrow">目標類型</th><th style="width:100px;">合規趨勢</th><th style="width:110px;">不符增減</th><th style="width:100px;">模式</th><th style="width:130px;">IP</th>
+      <th style="width:130px;" class="hide-narrow">系統</th><th style="width:80px;">不符</th>
       <th style="width:130px;">最後檢查</th><th style="width:70px;">狀態</th>
       <th style="width:180px;"></th>
     </tr></thead>
@@ -112,44 +118,11 @@
           {% if h.offline_alerted %}<span class="badge badge-deny">失聯</span>{% endif %}
           {% if h.note %}<div class="muted" style="font-size:12px;">{{ h.note }}</div>{% endif %}
         </td>
-        <td class="muted" style="font-size:12.5px;">{{ h.type_label }}</td>
-        <td>
-          {% set sp = sparks.get(h.id) %}
-          {% if sp %}
-          <svg width="{{ sp.w }}" height="{{ sp.h }}" viewBox="0 0 {{ sp.w }} {{ sp.h }}"
-               role="img" aria-label="近 {{ sp.vals|length }} 次符合率趨勢"
-               style="display:block;">
-            <title>近 {{ sp.vals|length }} 次符合率:{{ sp.vals|join('% → ') }}%</title>
-            {% if sp.vals|length > 1 %}
-            <polygon points="{{ sp.area }}"
-                     fill="color-mix(in srgb, var(--accent) 12%, transparent)"/>
-            <polyline points="{{ sp.points }}" fill="none" stroke="var(--accent)"
-                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            {% endif %}
-            <circle cx="{{ sp.last[0] }}" cy="{{ sp.last[1] }}" r="2.5" fill="var(--accent)"/>
-          </svg>
-          {% else %}<span class="muted">—</span>{% endif %}
-        </td>
-        <td>
-          {% set cb = changes.get(h.id) %}
-          {% if cb %}
-          <svg width="{{ cb.w }}" height="{{ cb.h }}" viewBox="0 0 {{ cb.w }} {{ cb.h }}"
-               role="img" aria-label="近 {{ cb.vals|length }} 次不符增減"
-               style="display:block;">
-            <title>近 {{ cb.vals|length }} 次不符增減(+為改善):{{ cb.vals|join(', ') }}</title>
-            <line x1="0" y1="{{ cb.mid }}" x2="{{ cb.w }}" y2="{{ cb.mid }}"
-                  stroke="var(--border)" stroke-width="1"/>
-            {% for b in cb['items'] %}
-            <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ cb.bw }}" height="{{ b.bh }}" rx="1.5"
-                  fill="{{ 'var(--allow)' if b.dir == 'up' else ('var(--deny)' if b.dir == 'down' else 'var(--text3)') }}"
-                  {% if b.dir == 'zero' %}opacity="0.55"{% endif %}/>
-            {% endfor %}
-          </svg>
-          {% else %}<span class="muted">—</span>{% endif %}
-        </td>
+        <td class="muted hide-narrow" style="font-size:12.5px;">{{ h.type_label }}</td>
+        {{ trends.trend_cells(sparks.get(h.id), changes.get(h.id)) }}
         <td><span class="badge badge-muted">{{ h.mode_label }}</span></td>
         <td class="mono">{{ h.ip_address or '—' }}</td>
-        <td class="muted" style="font-size:12px;">{{ h.os_name or '—' }}</td>
+        <td class="muted hide-narrow" style="font-size:12px;">{{ h.os_name or '—' }}</td>
         <td>{% if r and r.status == 'success' %}
           <span class="badge {{ 'badge-deny' if r.c_fail else 'badge-allow' }}">{{ r.c_fail }}</span>
           {% else %}<span class="muted">—</span>{% endif %}</td>
