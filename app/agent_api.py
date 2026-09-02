@@ -29,7 +29,7 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from app.checker import save_report, script_text
-from app.config import settings
+from app.config import local_now, settings
 from app.database import SessionLocal
 from app.models import Host
 
@@ -40,6 +40,7 @@ logger = logging.getLogger("ucc.agent_api")
 BODY_MAX = 5 * 1024 * 1024      # 整個表單 body 位元組上限
 JSON_MAX = 2 * 1024 * 1024      # json 欄位字串長度上限
 ITEMS_MAX = 500                 # 檢查項筆數上限(目前最多的 Linux 約 100 項)
+REPORT_MIN_INTERVAL = 60        # 同主機兩次回報最小間隔秒數(防持 token 灌報)
 SIG_HEADER = "X-UCC-Sig"        # /script 回應的腳本 HMAC 簽章標頭
 
 agent_app = FastAPI(title="BaselineGuard Agent API",
@@ -72,7 +73,8 @@ def _lookup_agent(token: str) -> dict | None:
         if host is None:
             return None
         return {"id": host.id, "name": host.name,
-                "slow": "1" if host.slow_scan else "0"}
+                "slow": "1" if host.slow_scan else "0",
+                "last_checked_at": host.last_checked_at}
 
 
 def _store_report(host_id: int, data: dict, raw: str) -> dict | None:
@@ -171,6 +173,15 @@ async def post_report(request: Request):
         return JSONResponse({"ok": False, "error": "invalid token"},
                             status_code=401)
     name = info["name"]
+
+    # 1.5) 頻率下限:正常 Agent 為每日 timer,一分鐘內重複回報必屬異常
+    #(灌報會撐大 DB 與版本軸、淹沒近期異動);429 讓正常 retry 稍後再來
+    last = info.get("last_checked_at")
+    if last and (local_now() - last).total_seconds() < REPORT_MIN_INTERVAL:
+        logger.warning("主機 %s 回報間隔低於 %s 秒,已拒絕", name,
+                       REPORT_MIN_INTERVAL)
+        return JSONResponse({"ok": False, "error": "report too frequent"},
+                            status_code=429)
 
     # 2) 有上限地讀 body 並自行解析表單
     body = await _read_body(request)

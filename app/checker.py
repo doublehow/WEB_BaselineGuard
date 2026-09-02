@@ -146,6 +146,7 @@ def save_report(db, host: Host, data: dict, raw_output: str,
         ))
     _record_changes(db, host, run, items, disabled)
     _record_versions(db, host, run, items, disabled)
+    _trim_versions(db, host)
 
     prev_status = host.last_run_status
     host.last_checked_at = local_now()
@@ -231,6 +232,34 @@ def _record_changes(db, host: Host, run: CheckRun, items: list,
                 item_id=iid, category=p.category,
                 before_status=p.status, after_status="",
                 description=p.description))
+
+
+_VERSIONS_CAP_PER_HOST = 20000   # 版本軸安全閥(正常用量遠低於此,見 _trim_versions)
+
+
+def _trim_versions(db, host: Host) -> None:
+    """版本歷程每主機筆數安全閥:超過即修剪最舊者。
+
+    ItemVersion 設計上不受保留天數清理(長期版本軸),但這也讓持有 token
+    的被攻陷主機可藉由每次回報翻轉大量項目狀態,無上限地灌爆資料庫。
+    正常使用(數百項 × 偶發異動)遠低於此閥值,觸發即代表異常灌報。
+    """
+    from sqlalchemy import func as _f
+    from app.models import ItemVersion
+    db.flush()
+    n = (db.query(_f.count(ItemVersion.id))
+         .filter(ItemVersion.host_id == host.id).scalar() or 0)
+    if n <= _VERSIONS_CAP_PER_HOST:
+        return
+    overflow = n - _VERSIONS_CAP_PER_HOST
+    oldest = [vid for (vid,) in
+              db.query(ItemVersion.id)
+              .filter(ItemVersion.host_id == host.id)
+              .order_by(ItemVersion.id).limit(overflow).all()]
+    (db.query(ItemVersion).filter(ItemVersion.id.in_(oldest))
+     .delete(synchronize_session=False))
+    logger.warning("主機 %s 版本歷程達安全閥 %s 筆,修剪最舊 %s 筆(疑似異常灌報)",
+                   host.name, _VERSIONS_CAP_PER_HOST, overflow)
 
 
 def _record_versions(db, host: Host, run: CheckRun, items: list,
