@@ -287,7 +287,7 @@ async def dashboard(request: Request, db: Session = Depends(get_db)):
     fail_delta = fail_deltas(db, [r for r in latest.values()])
 
     # 各主機趨勢迷你圖(近 12 次成功檢查:符合率折線 + 不符增減長條)
-    sparks, changes = host_trends(db, [h.id for h in hosts_all])
+    sparks, changes = host_trends(db)
 
     # 近期異動(入庫時與前一輪比對;卡片固定高度內捲動,故多取一些)
     recent_changes = (db.query(ResultChange)

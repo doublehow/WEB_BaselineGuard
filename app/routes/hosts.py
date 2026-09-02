@@ -55,7 +55,7 @@ _DELETE_BATCH = 500
 async def host_list(request: Request, db: Session = Depends(get_db),
                     error: str = ""):
     hosts = db.query(Host).order_by(Host.name).all()
-    sparks, changes = host_trends(db, [x.id for x in hosts])
+    sparks, changes = host_trends(db)
     import json as _json
     return render(request, "hosts.html", "hosts",
                   hosts=hosts, error=error, mode_labels=MODE_LABELS,

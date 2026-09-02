@@ -8,6 +8,7 @@ from fastapi import Request
 from fastapi.responses import Response
 from fastapi.templating import Jinja2Templates
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.auth import ROLE_LABELS, resolve_roles_cached
@@ -131,31 +132,44 @@ def _change_bars(deltas: list[int], w: int = 92, h: int = 24,
             "vals": deltas}
 
 
-def host_trends(db: Session, host_ids: list[int],
-                 limit: int = 12) -> tuple[dict, dict]:
+def host_trends(db: Session, limit: int = 12) -> tuple[dict, dict]:
     """各主機近 N 次成功檢查的趨勢(一次查完):
 
     回傳 (sparks, changes):host_id → 符合率折線 / 不符增減長條。
+
+    - 以 row_number() 視窗(SQLite 3.25+)把查詢限縮在每台最後 limit+1 筆,
+      成本不隨保留天數成長;先前無 LIMIT 撈全史再於 Python 切尾,兩個頁面
+      (儀表板、主機管理)每次載入都掃整張 check_runs。
+    - 兩個呼叫端都是全機隊,不再帶 host_id 過濾——先前 in_(全部 id) 什麼都
+      過濾不了,還受 SQLite bind 變數上限(999/32766)約束。
+    - c_pass+c_fail=0 的成功 run(如該型檢查項全數停用、driver 回空集合)
+      不具訊號,直接略過,避免折線被 0% 假崩跌重新縮放。
     """
-    if not host_ids:
-        return {}, {}
-    rows = (db.query(CheckRun.host_id, CheckRun.c_pass, CheckRun.c_fail)
-            .filter(CheckRun.host_id.in_(host_ids),
-                    CheckRun.status == "success")
-            .order_by(CheckRun.id).all())
+    rn = func.row_number().over(partition_by=CheckRun.host_id,
+                                order_by=CheckRun.id.desc()).label("rn")
+    sub = (db.query(CheckRun.host_id.label("hid"),
+                    CheckRun.c_pass.label("cp"),
+                    CheckRun.c_fail.label("cf"),
+                    CheckRun.id.label("rid"), rn)
+           .filter(CheckRun.status == "success")
+           .subquery())
+    rows = (db.query(sub.c.hid, sub.c.cp, sub.c.cf)
+            .filter(sub.c.rn <= limit + 1)
+            .order_by(sub.c.hid, sub.c.rid).all())
     pct_series: dict[int, list[int]] = {}
     fail_series: dict[int, list[int]] = {}
     for hid, cp, cf in rows:
         denom = cp + cf
-        pct_series.setdefault(hid, []).append(
-            round(cp / denom * 100) if denom else 0)
+        if not denom:
+            continue
+        pct_series.setdefault(hid, []).append(round(cp / denom * 100))
         fail_series.setdefault(hid, []).append(cf)
     sparks = {hid: _sparkline(vals[-limit:])
               for hid, vals in pct_series.items()}
     changes = {}
     for hid, fails in fail_series.items():
-        tail = fails[-(limit + 1):]
         # 改善量 = 前次不符 − 本次不符(正 = 進步)
-        deltas = [tail[i - 1] - tail[i] for i in range(1, len(tail))]
-        changes[hid] = _change_bars(deltas[-limit:])
+        deltas = [fails[i - 1] - fails[i] for i in range(1, len(fails))]
+        if deltas:
+            changes[hid] = _change_bars(deltas[-limit:])
     return sparks, changes
