@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}檢查 #{{ run.id }} — BaselineGuard{% endblock %}
+{% block page_title %}<a href="{{ back_url }}" class="muted"
+   style="font-size:13px;font-weight:400;vertical-align:middle;margin-right:10px;">← 檢查紀錄</a>檢查 #{{ run.id }} — {{ run.host_name }}{% endblock %}
+
+{% block head %}
+<style>
+  /* 不符項左側色條(掃視定位);快速定位標亮 */
+  .res-table tbody tr.st-fail td:first-child { box-shadow: inset 3px 0 0 var(--deny); }
+  .res-table tbody tr.st-warn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+  mark.hl { background:#ffe066; color:#111; border-radius:2px; padding:0 1px; }
+  mark.hl.cur { background:#ff922b; color:#fff; box-shadow:0 0 0 2px #ff922b; }
+  .locate-bar { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  .locate-bar label { display:inline-flex; flex-direction:row; align-items:center;
+    gap:6px; font-size:12.5px; color:var(--text2); }
+  .locate-bar input { width:auto; min-width:240px; }
+  /* 表頭固定:頁面捲動時標題列黏在視窗頂端(祖先需 overflow:visible;
+     視窗過窄時還原卡片橫向捲動,放棄 sticky) */
+  .res-card { overflow: visible; }
+  .res-table thead th { position: sticky; top: 0; z-index: 3;
+    background: var(--bg2); border-bottom: none;
+    box-shadow: inset 0 -1px 0 var(--border); }
+  @media (max-width: 1100px) { .res-card { overflow-x: auto; } }
+</style>
+{% endblock %}
+
+{% block actions %}
+{% if run.status == 'success' %}
+<a class="btn" href="/runs/{{ run.id }}/export.csv">⬇ 匯出 CSV</a>
+<a class="btn" href="/runs/{{ run.id }}/diff{{ src_qs }}">與前次比較</a>
+{% endif %}
+<a class="btn" href="/hosts/{{ run.host_id }}">主機詳情</a>
+{% endblock %}
+{% block content %}
+
+{% if run.status == 'failed' %}
+<div class="card" style="margin-bottom:16px;border-color:var(--deny);">
+  <b style="color:var(--deny);">執行失敗</b>
+  <pre class="raw" style="margin:10px 0 0;">{{ run.message }}</pre>
+</div>
+{% elif run.status == 'running' %}
+<div class="card" style="margin-bottom:16px;border-color:var(--warn);color:var(--warn);">
+  ⏳ 檢查執行中,請稍後重新整理。</div>
+{% endif %}
+
+<div class="stat-grid" style="grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));">
+  <div class="card"><div class="stat-label muted">符合率</div>
+    <div class="stat-value">{{ run.pass_pct }}%</div></div>
+  <div class="card"><div class="stat-label muted">符合</div>
+    <div class="stat-value" style="color:var(--allow);">{{ run.c_pass }}</div></div>
+  <div class="card"><div class="stat-label muted">不符</div>
+    <div class="stat-value" style="color:var(--deny);">{{ run.c_fail }}</div></div>
+  <div class="card"><div class="stat-label muted">注意</div>
+    <div class="stat-value" style="color:var(--warn);">{{ run.c_warn }}</div></div>
+  <div class="card"><div class="stat-label muted">人工判定</div>
+    <div class="stat-value" style="color:var(--manual);">{{ run.c_manual }}</div></div>
+  <div class="card"><div class="stat-label muted">不適用</div>
+    <div class="stat-value muted">{{ run.c_na }}</div></div>
+</div>
+
+<div class="card" style="margin-bottom:16px;">
+  <span class="muted" style="font-size:12.5px;">
+    模式:{{ run.mode_label }}
+    · 開始:{{ run.started_at.strftime('%F %H:%M:%S') }}
+    {% if run.finished_at %}· 結束:{{ run.finished_at.strftime('%F %H:%M:%S') }}{% endif %}
+    {# 設備 API 走 driver,版本是 driver 版號、也沒有磁碟掃描的概念 #}
+    {% if run.mode == 'api' %}· driver {{ run.script_version or '?' }}
+    {% else %}· 腳本 v{{ run.script_version or '?' }}
+    {{ '· 含全磁碟慢速掃描' if run.slow else '· 快速檢查(未含全磁碟掃描)' }}{% endif %}
+  </span>
+</div>
+
+<form method="get" action="/runs/{{ run.id }}" class="filter-bar card" style="padding:12px 14px;gap:10px;">
+  {# 頁內篩選送出後仍要記得來源篩選,否則按返回會回到未篩選的紀錄頁 #}
+  {% if fh %}<input type="hidden" name="fh" value="{{ fh }}">{% endif %}
+  {% if fs %}<input type="hidden" name="fs" value="{{ fs }}">{% endif %}
+  <select name="st" onchange="this.form.submit()">
+    <option value="">全部狀態</option>
+    {% for sk, sl in status_labels.items() %}
+    <option value="{{ sk }}" {{ 'selected' if st == sk else '' }}>{{ sl }}</option>
+    {% endfor %}
+  </select>
+  <input name="q" value="{{ q }}" placeholder="搜尋項目 ID / 描述…" style="width:240px;">
+  <button type="submit">篩選</button>
+  {% if st or q %}<a class="btn" href="/runs/{{ run.id }}{{ src_qs }}">清除</a>{% endif %}
+  <span class="muted" style="font-size:12.5px;">{{ results|length }} 項</span>
+  <span style="width:1px;height:22px;background:var(--border);"></span>
+  <span class="locate-bar">
+    <label>快速定位
+      <input id="locate" placeholder="頁內標亮字串(類似 Ctrl+F;Enter 跳下一筆)" autocomplete="off"></label>
+    <span class="muted" style="font-size:12.5px;">符合 <b id="locate-count">0</b> 處
+      <a href="#" id="locate-next" style="margin-left:8px;display:none;">下一筆 ↵</a></span>
+  </span>
+</form>
+
+<div class="card res-card" style="margin-bottom:16px;">
+  {% if results %}
+  <table class="res-table">
+    <thead><tr>
+      <th style="width:80px;">結果</th><th style="width:160px;">項目 ID</th>
+      <th style="width:190px;">章節</th><th>說明</th>
+    </tr></thead>
+    <tbody>
+      {% for r in results %}
+      <tr class="st-{{ r.status }}">
+        <td><span class="badge badge-{{ r.status_css }}">{{ r.status_label }}</span></td>
+        <td class="mono" style="font-size:12px;">{{ r.item_id }}</td>
+        <td class="muted" style="font-size:12.5px;">{{ r.category }}</td>
+        <td>{{ r.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">無符合篩選條件的項目。</p>
+  {% endif %}
+</div>
+
+{% if run.raw_output %}
+<details class="card">
+  <summary style="cursor:pointer;font-weight:600;">原始報告輸出(腳本完整文字報告)</summary>
+  <pre class="raw" style="margin-top:12px;">{{ run.raw_output }}</pre>
+</details>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script>
+  // 快速定位:類似 Ctrl+F —— 在本頁標亮比對到的字串並捲到該處
+  (function () {
+    const inp = document.getElementById('locate');
+    const cnt = document.getElementById('locate-count');
+    const nextBtn = document.getElementById('locate-next');
+    if (!inp) return;
+    // 只處理純文字儲存格(略過含 badge 的「結果」欄),快取原始文字
+    const cells = Array.from(document.querySelectorAll('.res-table tbody td'))
+      .filter(td => td.children.length === 0);
+    cells.forEach(td => td.dataset.orig = td.textContent);
+    let marks = [], cur = -1;
+
+    const esc = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    function wrap(text, q) {
+      const lo = text.toLowerCase(), ql = q.toLowerCase();
+      let out = '', i = 0, idx;
+      while ((idx = lo.indexOf(ql, i)) >= 0) {
+        out += esc(text.slice(i, idx)) +
+          '<mark class="hl">' + esc(text.slice(idx, idx + q.length)) + '</mark>';
+        i = idx + q.length;
+      }
+      return out + esc(text.slice(i));
+    }
+    function focus(i) {
+      if (!marks.length) return;
+      marks.forEach(m => m.classList.remove('cur'));
+      cur = (i + marks.length) % marks.length;
+      marks[cur].classList.add('cur');
+      marks[cur].scrollIntoView({ block: 'center', behavior: 'smooth' });
+      cnt.textContent = (cur + 1) + ' / ' + marks.length;
+    }
+    function run() {
+      const q = inp.value.trim();
+      cells.forEach(td => {
+        if (q && td.dataset.orig.toLowerCase().includes(q.toLowerCase()))
+          td.innerHTML = wrap(td.dataset.orig, q);
+        else td.textContent = td.dataset.orig;
+      });
+      marks = Array.from(document.querySelectorAll('.res-table tbody mark.hl'));
+      nextBtn.style.display = marks.length > 1 ? '' : 'none';
+      if (marks.length) { cur = -1; focus(0); }
+      else { cnt.textContent = '0'; cur = -1; }
+    }
+    inp.addEventListener('input', run);
+    inp.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); if (marks.length) focus(cur + 1); }
+    });
+    nextBtn.addEventListener('click', e => { e.preventDefault(); focus(cur + 1); });
+  })();
+</script>
+{% endblock %}

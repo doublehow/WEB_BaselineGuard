@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}版本歷程 — BaselineGuard{% endblock %}
+{% block page_title %}版本歷程(設定變更追溯){% endblock %}
+{% block content %}
+
+<div class="card">
+  <p class="muted" style="margin:0 0 14px;font-size:12.5px;">
+    只存每台主機的<b>初始基線</b>與其後的<b>每一次異動</b>(狀態變更/內容變更/
+    新增/消失),不受紀錄保留天數清理——用「主機 + 項目 ID」篩選即可看出
+    單一設定從初始到現在的完整變更歷程;檢查紀錄本身請至「紀錄」頁。</p>
+
+  {# 篩選列:GET 表單,條件反映在網址可直接分享 #}
+  <form method="get" action="/versions" class="filter-bar">
+    <select name="host_id" style="min-width:170px;">
+      <option value="0">全部主機</option>
+      {% for h in hosts %}
+      <option value="{{ h.id }}" {{ 'selected' if h.id == host_id else '' }}>{{ h.name }}</option>
+      {% endfor %}
+    </select>
+    <select name="kind" style="min-width:130px;">
+      <option value="">全部類型</option>
+      {% for k, kl in kind_labels.items() %}
+      <option value="{{ k }}" {{ 'selected' if k == kind else '' }}>{{ kl }}</option>
+      {% endfor %}
+    </select>
+    <input name="item" value="{{ item }}" placeholder="項目 ID(可部分比對)"
+           style="width:220px;">
+    <button class="btn" type="submit">篩選</button>
+    {% if host_id or item or kind %}<a class="btn" href="/versions">清除</a>{% endif %}
+    <span class="muted" style="font-size:12.5px;">共 {{ total }} 筆
+      {% if total > limit %}(僅顯示最新 {{ limit }} 筆,請縮小篩選或匯出){% endif %}</span>
+    <a class="btn" style="margin-left:auto;"
+       href="/versions/export.csv?host_id={{ host_id }}&item={{ item }}&kind={{ kind }}">⬇ 匯出 CSV</a>
+  </form>
+
+  {% if rows %}
+  <table>
+    <thead><tr>
+      <th style="width:130px;">時間</th>
+      <th style="width:130px;">主機</th>
+      <th style="width:170px;">項目 ID</th>
+      <th style="width:86px;">類型</th>
+      <th style="width:150px;">狀態變化</th>
+      <th>內容</th>
+      <th style="width:70px;">紀錄</th>
+    </tr></thead>
+    <tbody>
+      {% for v in rows %}
+      <tr>
+        <td class="muted" style="font-size:12px;">
+          {{ v.recorded_at.strftime('%Y-%m-%d %H:%M') if v.recorded_at else '—' }}</td>
+        <td><a href="/versions?host_id={{ v.host_id }}">{{ v.host_name }}</a></td>
+        <td class="mono" style="font-size:12px;">
+          <a href="/versions?host_id={{ v.host_id }}&item={{ v.item_id }}"
+             title="{{ v.category }}">{{ v.item_id }}</a></td>
+        <td><span class="badge badge-{{ v.kind_css }}">{{ v.kind_label }}</span></td>
+        <td>
+          {% if v.kind in ('initial', 'new') %}
+            <span class="badge badge-{{ v.status_css }}">{{ v.status_label }}</span>
+          {% elif v.kind == 'gone' %}
+            <span class="badge badge-{{ v.before_css }}">{{ v.before_label }}</span>
+            <span class="muted">→ 消失</span>
+          {% elif v.kind == 'status' %}
+            <span class="badge badge-{{ v.before_css }}">{{ v.before_label }}</span>
+            <span class="muted">→</span>
+            <span class="badge badge-{{ v.status_css }}">{{ v.status_label }}</span>
+          {% else %}{# desc:狀態不變,只有內容變 #}
+            <span class="badge badge-{{ v.status_css }}">{{ v.status_label }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size:12.5px;">
+          {{ v.description or v.before_desc }}
+          {% if v.kind in ('status', 'desc') and v.before_desc
+                and v.before_desc != v.description %}
+          <div class="muted" style="font-size:11.5px;margin-top:2px;">
+            原:{{ v.before_desc }}</div>
+          {% endif %}
+        </td>
+        <td>{% if v.run_id %}<a href="/runs/{{ v.run_id }}"
+              title="檢查明細(逾保留期限的紀錄可能已清理)">#{{ v.run_id }}</a>
+            {% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">尚無版本資料 —— 完成第一次檢查後,初始基線會自動建立;
+    之後每次檢查只記錄有變化的項目。</p>
+  {% endif %}
+</div>
+
+{% endblock %}

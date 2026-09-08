@@ -1,0 +1,36 @@
+{# 主機趨勢迷你圖巨集:儀表板與主機管理共用;sp/cb 由 webutil.host_trends 產生。
+   SVG 只此一份——修顏色/座標/無障礙標籤請改這裡,勿在頁面各自複製。 #}
+{% macro trend_cells(sp, cb) %}
+        <td>
+          {% if sp %}
+          <svg width="{{ sp.w }}" height="{{ sp.h }}" viewBox="0 0 {{ sp.w }} {{ sp.h }}"
+               role="img" aria-label="近 {{ sp.vals|length }} 次符合率趨勢"
+               style="display:block;">
+            <title>近 {{ sp.vals|length }} 次符合率:{{ sp.vals|join('% → ') }}%</title>
+            {% if sp.vals|length > 1 %}
+            <polygon points="{{ sp.area }}"
+                     fill="color-mix(in srgb, var(--accent) 12%, transparent)"/>
+            <polyline points="{{ sp.points }}" fill="none" stroke="var(--accent)"
+                      stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            {% endif %}
+            <circle cx="{{ sp.last[0] }}" cy="{{ sp.last[1] }}" r="2.5" fill="var(--accent)"/>
+          </svg>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td>
+          {% if cb %}
+          <svg width="{{ cb.w }}" height="{{ cb.h }}" viewBox="0 0 {{ cb.w }} {{ cb.h }}"
+               role="img" aria-label="近 {{ cb.vals|length }} 次不符增減"
+               style="display:block;">
+            <title>近 {{ cb.vals|length }} 次不符增減(+為改善):{{ cb.vals|join(', ') }}</title>
+            <line x1="0" y1="{{ cb.mid }}" x2="{{ cb.w }}" y2="{{ cb.mid }}"
+                  stroke="var(--border)" stroke-width="1"/>
+            {% for b in cb['items'] %}
+            <rect x="{{ b.x }}" y="{{ b.y }}" width="{{ cb.bw }}" height="{{ b.bh }}" rx="1.5"
+                  fill="{{ 'var(--allow)' if b.dir == 'up' else ('var(--deny)' if b.dir == 'down' else 'var(--text3)') }}"
+                  {% if b.dir == 'zero' %}opacity="0.55"{% endif %}/>
+            {% endfor %}
+          </svg>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+{% endmacro %}

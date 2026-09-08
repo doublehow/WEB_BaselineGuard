@@ -1,0 +1,44 @@
+# 依 UAT venv 實際安裝版本鎖定(來源:site-packages dist-info,2026-09-02)。
+# 重建環境:pip install -r requirements.lock.txt
+# 升級流程:改 requirements.txt 下限 → 測試環境驗證 → 重產本檔 → commit。
+
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.14.2
+bcrypt==5.0.0
+certifi==2026.7.22
+cffi==2.1.1
+click==8.4.2
+colorama==0.4.6
+cryptography==50.0.0
+fastapi==0.141.1
+greenlet==3.5.5
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.8.0
+httpx==0.28.1
+idna==3.19
+invoke==3.0.3
+itsdangerous==2.2.0
+jinja2==3.1.6
+ldap3==2.9.1
+markupsafe==3.0.3
+paramiko==5.0.0
+pyasn1==0.6.4
+pycparser==3.0
+pycryptodome==3.23.0
+pydantic==2.13.4
+pydantic-core==2.46.4
+pydantic-settings==2.15.0
+pynacl==1.6.2
+python-dotenv==1.2.3
+python-multipart==0.0.32
+pyyaml==6.0.3
+sqlalchemy==2.0.52
+starlette==1.6.0
+typing-extensions==4.16.0
+typing-inspection==0.4.4
+tzdata==2026.3
+uvicorn==0.52.4
+watchfiles==1.2.0
+websockets==17.0.1

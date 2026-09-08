@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}不符彙總 — BaselineGuard{% endblock %}
+{% block page_title %}不符彙總(跨主機差距分析){% endblock %}
+{% block content %}
+
+<div class="tabs" style="align-items:center;">
+  {% for sk, sl in [('fail','不符'), ('warn','注意'), ('manual','人工判定')] %}
+  <a href="/gaps?st={{ sk }}" class="{{ 'on' if st == sk else '' }}">{{ sl }}</a>
+  {% endfor %}
+  <a class="btn" href="/gaps/export.csv?st={{ st }}" style="margin-left:auto;">⬇ 匯出 CSV</a>
+</div>
+
+<div class="card">
+  <p class="muted" style="margin:0 0 14px;font-size:12.5px;">
+    以 {{ host_total }} 台啟用主機的「最新一次成功檢查」彙總,依受影響主機數排序;
+    「人工判定」頁籤可作為 GCB 例外清單(替代措施)之陳核依據。</p>
+  {% if gaps %}
+  <table>
+    <thead><tr>
+      <th style="width:160px;">項目 ID</th><th style="width:190px;">章節</th>
+      <th>說明(取其中一台的內容)</th>
+      <th style="width:90px;">主機數</th><th style="width:260px;">受影響主機</th>
+    </tr></thead>
+    <tbody>
+      {% for g in gaps %}
+      <tr>
+        <td class="mono" style="font-size:12px;">{{ g.item_id }}</td>
+        <td class="muted" style="font-size:12.5px;">{{ g.category }}</td>
+        <td>{{ g.description }}</td>
+        <td><span class="badge badge-{{ status_css[st] }}">{{ g.hosts|length }}/{{ host_total }}</span></td>
+        <td>{% for hn in g.hosts %}<span class="tag">{{ hn }}</span>{% endfor %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">
+    {{ '所有主機此類別皆無項目 🎉' if host_total else '尚無成功檢查資料 — 請先於「主機管理」新增主機並完成檢查。' }}</p>
+  {% endif %}
+</div>
+
+{% endblock %}
